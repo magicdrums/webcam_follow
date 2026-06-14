@@ -25,8 +25,10 @@ def camera_to_video_config(camera: Camera, app_config: AppConfig) -> VideoSource
                 stream_buffer_size=base.stream_buffer_size,
                 stream_max_failures=base.stream_max_failures,
                 rtsp_transport=camera.rtsp_transport or base.rtsp_transport,
-                stream_ffmpeg_options=base.stream_ffmpeg_options,
                 fallback_to_local=False,
+                stream_read_timeout_ms=base.stream_read_timeout_ms,
+                stream_open_timeout_ms=base.stream_open_timeout_ms,
+                stream_ffmpeg_options=base.stream_ffmpeg_options,
                 tuya_device_id=camera.tuya_device_id.strip(),
                 tuya_stream_type=camera.tuya_stream_type or "rtsp",
             )
@@ -49,8 +51,10 @@ def camera_to_video_config(camera: Camera, app_config: AppConfig) -> VideoSource
         stream_buffer_size=base.stream_buffer_size,
         stream_max_failures=base.stream_max_failures,
         rtsp_transport=camera.rtsp_transport or base.rtsp_transport,
-        stream_ffmpeg_options=base.stream_ffmpeg_options,
         fallback_to_local=base.fallback_to_local,
+        stream_read_timeout_ms=base.stream_read_timeout_ms,
+        stream_open_timeout_ms=base.stream_open_timeout_ms,
+        stream_ffmpeg_options=base.stream_ffmpeg_options,
         tuya_device_id=camera.tuya_device_id,
         tuya_stream_type=camera.tuya_stream_type,
     )

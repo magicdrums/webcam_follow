@@ -69,9 +69,12 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
     def api_frame():
         """Frame JPEG único — compatible con Safari iOS y navegadores móviles."""
         camera_id = _camera_id_from_request()
+        status = manager.get_status(camera_id)
         frame = manager.get_jpeg_frame(camera_id)
         if not frame:
             abort(404, description="Sin frame disponible")
+        if status and not status.connected:
+            abort(503, description="Stream desconectado o frame obsoleto")
         return Response(
             frame,
             mimetype="image/jpeg",

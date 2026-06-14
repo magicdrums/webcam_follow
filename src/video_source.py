@@ -21,7 +21,12 @@ logger = logging.getLogger(__name__)
 
 _FFMPEG_ENV_LOCK = threading.Lock()
 _CONNECT_ATTEMPTS = 3
-_WARMUP_MAX_ATTEMPTS = 90
+_WARMUP_MAX_ATTEMPTS = 30
+_WARMUP_MAX_SEC = 15.0
+
+
+def _timeout_usec(config: VideoSourceConfig) -> int:
+    return max(1_000_000, config.stream_read_timeout_ms * 1000)
 
 
 def _build_ffmpeg_capture_options(config: VideoSourceConfig, url: str) -> str | None:
@@ -31,6 +36,7 @@ def _build_ffmpeg_capture_options(config: VideoSourceConfig, url: str) -> str | 
         return extra or None
 
     transport = (config.rtsp_transport or "tcp").lower()
+    timeout_us = _timeout_usec(config)
     parts = [f"rtsp_transport;{transport}"]
     if transport == "tcp":
         parts.append("rtsp_flags;prefer_tcp")
@@ -38,7 +44,8 @@ def _build_ffmpeg_capture_options(config: VideoSourceConfig, url: str) -> str | 
         [
             "fflags;nobuffer",
             "flags;low_delay",
-            "stimeout;10000000",
+            f"stimeout;{timeout_us}",
+            f"rw_timeout;{timeout_us}",
             "max_delay;500000",
             "reorder_queue_size;0",
         ]
@@ -47,6 +54,15 @@ def _build_ffmpeg_capture_options(config: VideoSourceConfig, url: str) -> str | 
     if extra:
         parts.append(extra)
     return "|".join(parts)
+
+
+def _apply_capture_timeouts(capture: cv2.VideoCapture, config: VideoSourceConfig) -> None:
+    open_ms = config.stream_open_timeout_ms
+    read_ms = config.stream_read_timeout_ms
+    if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+        capture.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, open_ms)
+    if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+        capture.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, read_ms)
 
 
 def _open_ffmpeg_capture(config: VideoSourceConfig, url: str) -> cv2.VideoCapture:
@@ -58,6 +74,7 @@ def _open_ffmpeg_capture(config: VideoSourceConfig, url: str) -> cv2.VideoCaptur
             del os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"]
         capture = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
 
+    _apply_capture_timeouts(capture, config)
     capture.set(cv2.CAP_PROP_BUFFERSIZE, config.stream_buffer_size)
     if config.width > 0:
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.width)
@@ -70,14 +87,22 @@ def _valid_frame(frame: cv2.Mat | None) -> bool:
     return frame is not None and getattr(frame, "size", 0) > 0
 
 
-def _warmup_capture(capture: cv2.VideoCapture) -> bool:
+def _warmup_capture(capture: cv2.VideoCapture, config: VideoSourceConfig) -> bool:
     """Descarta frames hasta sincronizar con un keyframe H.264 válido."""
+    deadline = time.monotonic() + _WARMUP_MAX_SEC
+    read_limit = config.stream_read_timeout_ms / 1000 * 0.85
     for attempt in range(1, _WARMUP_MAX_ATTEMPTS + 1):
+        if time.monotonic() >= deadline:
+            break
+        t0 = time.monotonic()
         try:
             ok, frame = capture.read()
         except cv2.error as exc:
             logger.debug("Warmup frame %d: %s", attempt, exc)
             ok, frame = False, None
+        if time.monotonic() - t0 > read_limit:
+            logger.warning("Warmup: timeout de lectura RTSP")
+            return False
         if ok and _valid_frame(frame):
             logger.debug("Stream sincronizado tras %d frame(s)", attempt)
             return True
@@ -85,13 +110,25 @@ def _warmup_capture(capture: cv2.VideoCapture) -> bool:
     return False
 
 
-def _safe_read(capture: cv2.VideoCapture) -> tuple[bool, cv2.Mat | None]:
+def _safe_read(
+    capture: cv2.VideoCapture, config: VideoSourceConfig
+) -> tuple[bool, cv2.Mat | None, bool]:
+    """Lee un frame. stalled=True si la lectura superó el timeout configurado."""
+    read_limit = config.stream_read_timeout_ms / 1000 * 0.85
+    t0 = time.monotonic()
     try:
         ok, frame = capture.read()
     except cv2.error as exc:
         logger.warning("Error leyendo frame del stream: %s", exc)
-        return False, None
-    return ok, frame
+        return False, None, False
+    stalled = (time.monotonic() - t0) > read_limit
+    if stalled:
+        logger.warning(
+            "Lectura RTSP lenta (%.1fs > %.1fs); se reconectará",
+            time.monotonic() - t0,
+            read_limit,
+        )
+    return ok, frame, stalled
 
 
 @dataclass
@@ -201,7 +238,7 @@ class StreamSource:
                 time.sleep(min(attempt, 2))
                 continue
 
-            if _warmup_capture(capture):
+            if _warmup_capture(capture, self.config):
                 self._capture = capture
                 logger.info("Stream conectado")
                 return True
@@ -223,10 +260,13 @@ class StreamSource:
     def is_open(self) -> bool:
         return self._capture is not None and self._capture.isOpened()
 
-    def read(self) -> tuple[bool, cv2.Mat | None]:
+    def read(self) -> tuple[bool, cv2.Mat | None, bool]:
         if self._capture is None:
-            return False, None
-        return _safe_read(self._capture)
+            return False, None, False
+        ok, frame, stalled = _safe_read(self._capture, self.config)
+        if stalled:
+            self._release_capture()
+        return ok, frame, stalled
 
     def frames(self) -> Iterator[cv2.Mat]:
         failures = 0
@@ -235,7 +275,12 @@ class StreamSource:
                 self._reconnect()
                 continue
 
-            ok, frame = self.read()
+            ok, frame, stalled = self.read()
+            if stalled:
+                self._reconnect()
+                failures = 0
+                continue
+
             if ok and _valid_frame(frame):
                 failures = 0
                 yield frame
@@ -319,7 +364,7 @@ class TuyaStreamSource:
                 capture.release()
                 time.sleep(min(attempt, 2))
                 continue
-            if _warmup_capture(capture):
+            if _warmup_capture(capture, self.config):
                 self._capture = capture
                 logger.info("Stream Tuya conectado")
                 return True
@@ -334,10 +379,13 @@ class TuyaStreamSource:
     def is_open(self) -> bool:
         return self._capture is not None and self._capture.isOpened()
 
-    def read(self) -> tuple[bool, cv2.Mat | None]:
+    def read(self) -> tuple[bool, cv2.Mat | None, bool]:
         if self._capture is None:
-            return False, None
-        return _safe_read(self._capture)
+            return False, None, False
+        ok, frame, stalled = _safe_read(self._capture, self.config)
+        if stalled:
+            self._release_capture()
+        return ok, frame, stalled
 
     def frames(self) -> Iterator[cv2.Mat]:
         failures = 0
@@ -346,7 +394,12 @@ class TuyaStreamSource:
                 self._reconnect()
                 continue
 
-            ok, frame = self.read()
+            ok, frame, stalled = self.read()
+            if stalled:
+                self._reconnect()
+                failures = 0
+                continue
+
             if ok and _valid_frame(frame):
                 failures = 0
                 yield frame

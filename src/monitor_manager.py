@@ -95,6 +95,7 @@ class CameraWorker:
         self._rule_cooldowns: dict[str, float] = {}
         self._settings_version = ""
         self._motion_analytics = MotionAnalytics()
+        self._last_frame_mono = 0.0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -118,7 +119,14 @@ class CameraWorker:
 
     def get_status(self) -> LiveStatus:
         with self._lock:
-            return replace(self._status)
+            status = replace(self._status)
+            if (
+                status.connected
+                and self._last_frame_mono > 0
+                and time.monotonic() - self._last_frame_mono > 10.0
+            ):
+                status.connected = False
+            return status
 
     def get_motion_analytics(self) -> MotionAnalytics:
         return self._motion_analytics
@@ -283,6 +291,7 @@ class CameraWorker:
         with self._lock:
             self._latest_jpeg = encoded.tobytes()
             self._status = status
+            self._last_frame_mono = time.monotonic()
 
     @staticmethod
     def _mask_stream_url(url: str) -> str:

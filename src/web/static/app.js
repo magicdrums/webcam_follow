@@ -53,6 +53,9 @@ async function pollFrameOnce() {
       setFrameBlob(await res.blob());
       $("video-placeholder").style.display = "none";
       $("live-feed").style.display = "block";
+    } else if (res.status === 503 || res.status === 404) {
+      $("video-placeholder").style.display = "flex";
+      $("live-feed").style.display = "none";
     }
   } catch (err) {
     console.warn("Frame error:", err);

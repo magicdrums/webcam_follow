@@ -91,6 +91,8 @@ class VideoSourceConfig:
     stream_max_failures: int
     rtsp_transport: str
     fallback_to_local: bool
+    stream_read_timeout_ms: int = 5000
+    stream_open_timeout_ms: int = 10000
     stream_ffmpeg_options: str = ""
     tuya_device_id: str = ""
     tuya_stream_type: str = "rtsp"
@@ -211,8 +213,10 @@ def load_config() -> AppConfig:
             stream_buffer_size=_env_int("STREAM_BUFFER_SIZE", 1),
             stream_max_failures=_env_int("STREAM_MAX_FAILURES", 30),
             rtsp_transport=_env_str("RTSP_TRANSPORT", "tcp"),
-            stream_ffmpeg_options=_env_str("STREAM_FFMPEG_OPTIONS", ""),
             fallback_to_local=_default_fallback_to_local(),
+            stream_read_timeout_ms=_env_int("STREAM_READ_TIMEOUT_MS", 5000),
+            stream_open_timeout_ms=_env_int("STREAM_OPEN_TIMEOUT_MS", 10000),
+            stream_ffmpeg_options=_env_str("STREAM_FFMPEG_OPTIONS", ""),
         ),
         detection=DetectionConfig(
             motion_threshold=_env_int("MOTION_THRESHOLD", 25),
