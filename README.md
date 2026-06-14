@@ -193,6 +193,13 @@ Con `WEB_ENABLED=true` (activo por defecto en contenedor) tienes un panel en el 
 - Persistencia en `data/notification_channels.json`
 - Las reglas de alerta referencian estos canales (checkbox email/telegram/whatsapp)
 
+#### Capturas (`/admin` → Capturas)
+
+- Retención por **días** y **máximo por cámara** (0 = sin límite)
+- Limpieza automática en segundo plano e **Ejecutar limpieza ahora**
+- Explorador de archivos con miniatura, filtro por cámara y eliminación individual
+- Persistencia en `data/snapshot_settings.json`
+
 Al primer arranque se importa la cámara, regla y canales desde tu `.env`.
 
 ```env

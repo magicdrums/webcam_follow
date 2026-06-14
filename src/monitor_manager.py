@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import cv2
 
 from src.admin.camera_config import camera_snapshot_dir, camera_to_video_config
+from src.admin.snapshots import SnapshotRetentionWorker, SnapshotService
 from src.admin.models import AlertHistoryEntry
 from src.admin.store import AdminStore
 from src.detector import DetectionEvent, EventType, VisionDetector
@@ -351,6 +352,8 @@ class MonitorManager:
         self._active_camera_id: str | None = None
         self._lock = threading.Lock()
         self._started = False
+        self._snapshot_service = SnapshotService(app_config.detection.snapshot_dir)
+        self._retention_worker: SnapshotRetentionWorker | None = None
 
     def start(self) -> None:
         if self._started:
@@ -359,9 +362,13 @@ class MonitorManager:
         log_platform_info(self.app_config.platform)
         self.store.bootstrap_from_env(self.app_config)
         self.reload()
+        self._start_retention_worker()
         self._started = True
 
     def stop(self) -> None:
+        if self._retention_worker:
+            self._retention_worker.stop()
+            self._retention_worker = None
         for worker in list(self._workers.values()):
             worker.stop()
         self._workers.clear()
@@ -455,3 +462,23 @@ class MonitorManager:
             merged.extend(worker.list_snapshots(limit))
         merged.sort(key=lambda item: item["time"], reverse=True)
         return merged[:limit]
+
+    @property
+    def snapshot_service(self) -> SnapshotService:
+        return self._snapshot_service
+
+    def run_snapshot_cleanup(self) -> int:
+        settings = self.store.get_snapshot_settings()
+        return self._snapshot_service.apply_retention(settings)
+
+    def _start_retention_worker(self) -> None:
+        if self._retention_worker and self._retention_worker.is_alive():
+            return
+        self._retention_worker = SnapshotRetentionWorker(
+            self._snapshot_service,
+            self.store.get_snapshot_settings,
+        )
+        self._retention_worker.start()
+        deleted = self._retention_worker.run_once()
+        if deleted:
+            logger.info("Limpieza inicial de capturas: %d eliminada(s)", deleted)

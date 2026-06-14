@@ -13,6 +13,7 @@ No se versionan en git: pueden contener tokens, contraseñas y datos de tus cám
 | `alert_history.json` | Historial de detecciones y notificaciones |
 | `notification_channels.json` | SMTP, Telegram, Twilio/WhatsApp |
 | `tuya_config.json` | Access ID/Key, UID y región Tuya Cloud |
+| `snapshot_settings.json` | Retención de capturas (días, máximo por cámara) |
 
 ## Ubicación
 

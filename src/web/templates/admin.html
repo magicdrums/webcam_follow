@@ -26,6 +26,7 @@
       <button class="tabs__btn" data-tab="tuya" type="button">Tuya IoT</button>
       <button class="tabs__btn" data-tab="rules" type="button">Reglas de alerta</button>
       <button class="tabs__btn" data-tab="channels" type="button">Canales</button>
+      <button class="tabs__btn" data-tab="snapshots" type="button">Capturas</button>
       <button class="tabs__btn" data-tab="history" type="button">Historial</button>
     </nav>
 
@@ -315,6 +316,56 @@
             <button class="btn btn--primary" type="submit">Guardar canales</button>
           </div>
         </form>
+      </div>
+    </section>
+
+    <!-- Capturas -->
+    <section id="tab-snapshots" class="tab-panel">
+      <div class="panel">
+        <h2>Retención de capturas</h2>
+        <p class="muted form-hint">
+          Las capturas se guardan en <code>snapshots/</code>. La limpieza automática se ejecuta en segundo plano.
+          Usa <strong>0</strong> para desactivar un límite (días o cantidad).
+        </p>
+        <form id="snapshots-config-form" class="form form--wide">
+          <div class="form__grid">
+            <label class="form__field">
+              <span>Conservar (días)</span>
+              <input type="number" id="snap-retention-days" min="0" step="1" value="30">
+            </label>
+            <label class="form__field">
+              <span>Máximo por cámara</span>
+              <input type="number" id="snap-max-per-camera" min="0" step="1" value="500">
+            </label>
+            <label class="form__field">
+              <span>Intervalo de limpieza (minutos)</span>
+              <input type="number" id="snap-cleanup-interval" min="1" step="1" value="60">
+            </label>
+          </div>
+          <div class="form__actions">
+            <button class="btn btn--primary" type="submit">Guardar retención</button>
+            <button class="btn" type="button" id="btn-snap-cleanup">Ejecutar limpieza ahora</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Archivos guardados</h2>
+          <div class="panel__head-actions">
+            <label class="form__field form__field--inline">
+              <span>Cámara</span>
+              <select id="snap-filter-camera">
+                <option value="">Todas</option>
+              </select>
+            </label>
+            <button id="btn-snap-refresh" class="btn" type="button">Actualizar</button>
+          </div>
+        </div>
+        <p id="snap-stats" class="muted form-hint">—</p>
+        <div id="snapshots-admin-table" class="table-wrap">
+          <p class="muted">Cargando capturas…</p>
+        </div>
       </div>
     </section>
 

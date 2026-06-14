@@ -6,7 +6,14 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from src.admin.models import AlertHistoryEntry, AlertRule, Camera, NotificationChannels, TuyaConfig
+from src.admin.models import (
+    AlertHistoryEntry,
+    AlertRule,
+    Camera,
+    NotificationChannels,
+    SnapshotSettings,
+    TuyaConfig,
+)
 from src.admin.channels import channels_from_app_config
 from src.integrations.tuya.client import TuyaClient
 
@@ -27,6 +34,7 @@ class AdminStore:
         self._history_file = self.data_dir / "alert_history.json"
         self._channels_file = self.data_dir / "notification_channels.json"
         self._tuya_file = self.data_dir / "tuya_config.json"
+        self._snapshots_file = self.data_dir / "snapshot_settings.json"
         self._lock = threading.Lock()
         self._tuya_client: TuyaClient | None = None
 
@@ -68,6 +76,11 @@ class AdminStore:
                 tuya = _tuya_from_app_config(config)
                 self._save_object(self._tuya_file, tuya.to_dict())
                 logger.info("Configuración Tuya inicializada")
+
+            if not self._snapshots_file.exists():
+                snap = _snapshot_settings_from_app_config(config)
+                self._save_object(self._snapshots_file, snap.to_dict())
+                logger.info("Configuración de capturas inicializada")
 
     def get_tuya_config(self) -> TuyaConfig:
         with self._lock:
@@ -249,6 +262,23 @@ class AdminStore:
             self._save_object(self._channels_file, channels.to_dict())
         return channels
 
+    def get_snapshot_settings(self) -> SnapshotSettings:
+        with self._lock:
+            data = self._load_object(self._snapshots_file)
+            if not data:
+                return SnapshotSettings()
+            return SnapshotSettings.from_dict(data)
+
+    def update_snapshot_settings(self, settings: SnapshotSettings) -> SnapshotSettings:
+        from src.admin.models import _now_iso
+
+        data = settings.to_dict()
+        data["updated_at"] = _now_iso()
+        updated = SnapshotSettings.from_dict(data)
+        with self._lock:
+            self._save_object(self._snapshots_file, updated.to_dict())
+        return updated
+
 
 def _tuya_from_app_config(config: AppConfig) -> TuyaConfig:
     import os
@@ -265,3 +295,25 @@ def _tuya_from_app_config(config: AppConfig) -> TuyaConfig:
         api_endpoint=os.getenv("TUYA_API_ENDPOINT", ""),
         default_stream_type=os.getenv("TUYA_STREAM_TYPE", "rtsp"),
     )
+
+
+def _snapshot_settings_from_app_config(config: AppConfig) -> SnapshotSettings:
+    import os
+
+    return SnapshotSettings(
+        retention_days=_env_int("SNAPSHOT_RETENTION_DAYS", 30),
+        max_per_camera=_env_int("SNAPSHOT_MAX_PER_CAMERA", 500),
+        cleanup_interval_sec=_env_int("SNAPSHOT_CLEANUP_INTERVAL_SEC", 3600),
+    )
+
+
+def _env_int(name: str, default: int) -> int:
+    import os
+
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default

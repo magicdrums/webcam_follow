@@ -591,8 +591,127 @@ async function loadTuyaDevices() {
 
 $("btn-tuya-refresh").addEventListener("click", () => loadTuyaDevices());
 
+// --- Capturas ---
+async function populateSnapshotCameraFilter(selected = "") {
+  const cameras = await api("GET", "/api/admin/cameras");
+  const sel = $("snap-filter-camera");
+  sel.innerHTML =
+    '<option value="">Todas</option>' +
+    cameras
+      .map(
+        (c) =>
+          `<option value="${c.id}" ${c.id === selected ? "selected" : ""}>${c.name}</option>`
+      )
+      .join("");
+}
+
+async function loadSnapshotConfig() {
+  const cfg = await api("GET", "/api/admin/snapshots/config");
+  $("snap-retention-days").value = cfg.retention_days ?? 30;
+  $("snap-max-per-camera").value = cfg.max_per_camera ?? 500;
+  $("snap-cleanup-interval").value = Math.round((cfg.cleanup_interval_sec ?? 3600) / 60);
+}
+
+$("snapshots-config-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const payload = {
+    retention_days: parseInt($("snap-retention-days").value, 10),
+    max_per_camera: parseInt($("snap-max-per-camera").value, 10),
+    cleanup_interval_sec: parseInt($("snap-cleanup-interval").value, 10) * 60,
+  };
+  try {
+    await api("PUT", "/api/admin/snapshots/config", payload);
+    toast("Retención de capturas guardada");
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+$("btn-snap-cleanup").addEventListener("click", async () => {
+  try {
+    const res = await api("POST", "/api/admin/snapshots/cleanup");
+    toast(`Limpieza: ${res.deleted} archivo(s) eliminado(s)`);
+    loadSnapshotsAdmin();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+async function loadSnapshotsAdmin() {
+  const cameraId = $("snap-filter-camera").value || undefined;
+  const qs = cameraId ? `?camera_id=${encodeURIComponent(cameraId)}&limit=200` : "?limit=200";
+  const wrap = $("snapshots-admin-table");
+  try {
+    const [stats, data] = await Promise.all([
+      api("GET", "/api/admin/snapshots/stats"),
+      api("GET", `/api/admin/snapshots${qs}`),
+    ]);
+    $("snap-stats").textContent = `${stats.total_files} archivo(s) · ${stats.total_size_label} total`;
+
+    if (!data.items.length) {
+      wrap.innerHTML = '<p class="muted">No hay capturas guardadas.</p>';
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Vista</th><th>Cámara</th><th>Fecha</th><th>Evento</th><th>Tamaño</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.items
+            .map(
+              (s) => `
+            <tr>
+              <td>
+                <a href="${s.url}" target="_blank" rel="noopener">
+                  <img src="${s.url}" alt="" width="80" height="45" style="object-fit:cover;border-radius:4px">
+                </a>
+              </td>
+              <td>${s.camera_name}</td>
+              <td>${formatTime(s.timestamp || s.mtime)}</td>
+              <td>${EVENT_LABELS[s.event_type] || s.event_type || "—"}</td>
+              <td>${s.size_label}</td>
+              <td class="cell-actions">
+                <button class="btn btn--sm btn--danger" data-del-snap="${s.camera_id}" data-snap-name="${s.filename}">Eliminar</button>
+              </td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+      <p class="muted">Mostrando ${data.items.length} de ${data.total}</p>`;
+
+    wrap.querySelectorAll("[data-del-snap]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar esta captura?")) return;
+        try {
+          await api(
+            "DELETE",
+            `/api/admin/snapshots/${btn.dataset.delSnap}/${encodeURIComponent(btn.dataset.snapName)}`
+          );
+          toast("Captura eliminada");
+          loadSnapshotsAdmin();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      });
+    });
+  } catch (err) {
+    wrap.innerHTML = `<p class="muted">${err.message}</p>`;
+  }
+}
+
+$("btn-snap-refresh").addEventListener("click", () => loadSnapshotsAdmin());
+$("snap-filter-camera").addEventListener("change", () => loadSnapshotsAdmin());
+
 loadCamerasAdmin();
 loadRules();
 loadHistory();
 loadChannels();
 loadTuyaConfig();
+populateSnapshotCameraFilter();
+loadSnapshotConfig();
+loadSnapshotsAdmin();

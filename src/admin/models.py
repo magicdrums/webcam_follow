@@ -121,6 +121,26 @@ class NotificationChannels:
 
 
 @dataclass
+class SnapshotSettings:
+    retention_days: int = 30
+    max_per_camera: int = 500
+    cleanup_interval_sec: int = 3600
+    updated_at: str = field(default_factory=_now_iso)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SnapshotSettings:
+        return cls(
+            retention_days=int(data.get("retention_days", 30)),
+            max_per_camera=int(data.get("max_per_camera", 500)),
+            cleanup_interval_sec=int(data.get("cleanup_interval_sec", 3600)),
+            updated_at=data.get("updated_at", _now_iso()),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class AlertRule:
     id: str
     name: str

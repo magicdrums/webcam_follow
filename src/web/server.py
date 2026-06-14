@@ -10,7 +10,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 from src.admin.channels import channels_to_public_dict, merge_channel_updates
 from src.admin.tuya_config import merge_tuya_updates, tuya_to_public_dict
 from src.integrations.tuya.client import TuyaClientError
-from src.admin.models import AlertRule, Camera
+from src.admin.models import AlertRule, Camera, SnapshotSettings
 from src.admin.notifications import StoreNotificationService
 from src.admin.store import AdminStore
 from src.config import AppConfig
@@ -123,6 +123,67 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         store.add_camera(camera)
         manager.reload()
         return jsonify(camera.to_dict()), 201
+
+    # --- Admin API: capturas ---
+    snapshot_service = manager.snapshot_service
+
+    @app.get("/api/admin/snapshots/config")
+    def admin_get_snapshot_config():
+        return jsonify(store.get_snapshot_settings().to_dict())
+
+    @app.put("/api/admin/snapshots/config")
+    def admin_update_snapshot_config():
+        payload = request.get_json(silent=True) or {}
+        current = store.get_snapshot_settings()
+        retention_days = int(payload.get("retention_days", current.retention_days))
+        max_per_camera = int(payload.get("max_per_camera", current.max_per_camera))
+        cleanup_interval_sec = int(
+            payload.get("cleanup_interval_sec", current.cleanup_interval_sec)
+        )
+        settings = store.update_snapshot_settings(
+            SnapshotSettings(
+                retention_days=max(0, retention_days),
+                max_per_camera=max(0, max_per_camera),
+                cleanup_interval_sec=max(60, cleanup_interval_sec),
+            )
+        )
+        return jsonify(settings.to_dict())
+
+    @app.get("/api/admin/snapshots/stats")
+    def admin_snapshot_stats():
+        return jsonify(
+            snapshot_service.stats(store.list_cameras())
+        )
+
+    @app.get("/api/admin/snapshots")
+    def admin_list_snapshots():
+        camera_id = request.args.get("camera_id") or None
+        limit = min(int(request.args.get("limit", 100)), 500)
+        offset = max(int(request.args.get("offset", 0)), 0)
+        return jsonify(
+            snapshot_service.list_snapshots(
+                store.list_cameras(),
+                camera_id=camera_id,
+                limit=limit,
+                offset=offset,
+            )
+        )
+
+    @app.post("/api/admin/snapshots/cleanup")
+    def admin_snapshot_cleanup():
+        deleted = manager.run_snapshot_cleanup()
+        return jsonify({"ok": True, "deleted": deleted})
+
+    @app.delete("/api/admin/snapshots/<camera_id>/<filename>")
+    def admin_delete_snapshot(camera_id: str, filename: str):
+        if not snapshot_service.delete(camera_id, filename):
+            abort(404)
+        return jsonify({"ok": True})
+
+    @app.delete("/api/admin/snapshots/<camera_id>")
+    def admin_delete_camera_snapshots(camera_id: str):
+        deleted = snapshot_service.delete_camera(camera_id)
+        return jsonify({"ok": True, "deleted": deleted})
 
     @app.put("/api/admin/cameras/<camera_id>")
     def admin_update_camera(camera_id: str):
