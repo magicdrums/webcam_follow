@@ -340,88 +340,104 @@ class CameraWorker:
                 if self._stop.is_set():
                     break
 
-                detection = self.store.build_detection_config(self.app_config)
-                detector = self._sync_detector(detector, detection)
-                yolo_settings = self.store.get_yolo_settings()
+                try:
+                    detection = self.store.build_detection_config(self.app_config)
+                    detector = self._sync_detector(detector, detection)
+                    yolo_settings = self.store.get_yolo_settings()
 
-                now = time.monotonic()
-                frame_count, fps_timer, fps = self._update_fps(frame_count, fps_timer)
-                with self._lock:
-                    self._status.fps = fps
+                    now = time.monotonic()
+                    frame_count, fps_timer, fps = self._update_fps(
+                        frame_count, fps_timer
+                    )
+                    with self._lock:
+                        self._status.fps = fps
 
-                if now - last_detection < detection.detection_interval_sec:
-                    display = frame
-                    snap_dict = self._motion_analytics.snapshot.to_dict()
-                    if yolo_settings.heatmap_enabled or yolo_settings.motion_prediction_enabled:
-                        self._motion_analytics.update(
-                            None,
-                            frame.shape,
-                            decay=yolo_settings.heatmap_decay,
-                            enable_prediction=False,
-                        )
+                    if now - last_detection < detection.detection_interval_sec:
+                        display = frame
                         snap_dict = self._motion_analytics.snapshot.to_dict()
-                        display = self._motion_analytics.render_overlay(
-                            frame,
+                        if (
+                            yolo_settings.heatmap_enabled
+                            or yolo_settings.motion_prediction_enabled
+                        ):
+                            self._motion_analytics.update(
+                                None,
+                                frame.shape,
+                                decay=yolo_settings.heatmap_decay,
+                                enable_prediction=False,
+                            )
+                            snap_dict = self._motion_analytics.snapshot.to_dict()
+                            display = self._motion_analytics.render_overlay(
+                                frame,
+                                opacity=yolo_settings.heatmap_opacity,
+                                show_heatmap=yolo_settings.heatmap_enabled,
+                                show_prediction=yolo_settings.motion_prediction_enabled,
+                            )
+                        self._publish_frame(
+                            display,
+                            last_motion,
+                            last_motion_area,
+                            last_counts,
+                            last_yolo_active,
+                            fps,
+                            snap_dict,
+                        )
+                        continue
+
+                    last_detection = now
+                    events, annotated, motion_mask = detector.analyze(frame)
+
+                    yolo_settings = self.store.get_yolo_settings()
+                    analytics_snap = self._motion_analytics.update(
+                        motion_mask,
+                        frame.shape,
+                        decay=yolo_settings.heatmap_decay,
+                        enable_prediction=yolo_settings.motion_prediction_enabled,
+                    )
+                    if (
+                        yolo_settings.heatmap_enabled
+                        or yolo_settings.motion_prediction_enabled
+                    ):
+                        annotated = self._motion_analytics.render_overlay(
+                            annotated,
                             opacity=yolo_settings.heatmap_opacity,
+                            prediction=analytics_snap.prediction,
                             show_heatmap=yolo_settings.heatmap_enabled,
                             show_prediction=yolo_settings.motion_prediction_enabled,
                         )
+
+                    self._handle_events(events, annotated, notifications)
+
+                    last_motion = any(
+                        e.event_type == EventType.MOTION for e in events
+                    )
+                    for event in events:
+                        if event.motion_area:
+                            last_motion_area = event.motion_area
+                    if events:
+                        last_counts = dict(events[-1].object_counts)
+                    last_yolo_active = (
+                        not detection.yolo_on_motion_only or last_motion
+                    )
+
                     self._publish_frame(
-                        display,
+                        annotated,
                         last_motion,
                         last_motion_area,
                         last_counts,
                         last_yolo_active,
                         fps,
-                        snap_dict,
+                        analytics_snap.to_dict(),
                     )
-                    continue
-
-                last_detection = now
-                events, annotated, motion_mask = detector.analyze(frame)
-
-                yolo_settings = self.store.get_yolo_settings()
-                analytics_snap = self._motion_analytics.update(
-                    motion_mask,
-                    frame.shape,
-                    decay=yolo_settings.heatmap_decay,
-                    enable_prediction=yolo_settings.motion_prediction_enabled,
-                )
-                if yolo_settings.heatmap_enabled or yolo_settings.motion_prediction_enabled:
-                    annotated = self._motion_analytics.render_overlay(
-                        annotated,
-                        opacity=yolo_settings.heatmap_opacity,
-                        prediction=analytics_snap.prediction,
-                        show_heatmap=yolo_settings.heatmap_enabled,
-                        show_prediction=yolo_settings.motion_prediction_enabled,
+                except Exception:
+                    logger.exception(
+                        "[%s] Error procesando frame; se continúa",
+                        self.camera.name,
                     )
-
-                self._handle_events(events, annotated, notifications)
-
-                last_motion = any(e.event_type == EventType.MOTION for e in events)
-                for event in events:
-                    if event.motion_area:
-                        last_motion_area = event.motion_area
-                if events:
-                    last_counts = dict(events[-1].object_counts)
-                last_yolo_active = (
-                    not detection.yolo_on_motion_only or last_motion
-                )
-
-                self._publish_frame(
-                    annotated,
-                    last_motion,
-                    last_motion_area,
-                    last_counts,
-                    last_yolo_active,
-                    fps,
-                    analytics_snap.to_dict(),
-                )
         finally:
             video.release()
             with self._lock:
                 self._status.connected = False
-            if not self._stop.is_set():
+            if not self._stop.is_set() and self.video_config.source_type == "local":
                 raise RuntimeError("Fuente de video interrumpida")
 
 

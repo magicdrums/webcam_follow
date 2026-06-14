@@ -90,6 +90,7 @@ class VideoSourceConfig:
     stream_buffer_size: int
     stream_max_failures: int
     rtsp_transport: str
+    stream_ffmpeg_options: str = ""
     fallback_to_local: bool
     tuya_device_id: str = ""
     tuya_stream_type: str = "rtsp"
@@ -210,6 +211,7 @@ def load_config() -> AppConfig:
             stream_buffer_size=_env_int("STREAM_BUFFER_SIZE", 1),
             stream_max_failures=_env_int("STREAM_MAX_FAILURES", 30),
             rtsp_transport=_env_str("RTSP_TRANSPORT", "tcp"),
+            stream_ffmpeg_options=_env_str("STREAM_FFMPEG_OPTIONS", ""),
             fallback_to_local=_default_fallback_to_local(),
         ),
         detection=DetectionConfig(

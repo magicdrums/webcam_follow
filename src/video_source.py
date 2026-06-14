@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -17,6 +18,80 @@ if TYPE_CHECKING:
     from src.admin.store import AdminStore
 
 logger = logging.getLogger(__name__)
+
+_FFMPEG_ENV_LOCK = threading.Lock()
+_CONNECT_ATTEMPTS = 3
+_WARMUP_MAX_ATTEMPTS = 90
+
+
+def _build_ffmpeg_capture_options(config: VideoSourceConfig, url: str) -> str | None:
+    """Opciones FFmpeg para OpenCV (OPENCV_FFMPEG_CAPTURE_OPTIONS)."""
+    if not url.lower().startswith("rtsp://"):
+        extra = config.stream_ffmpeg_options.strip()
+        return extra or None
+
+    transport = (config.rtsp_transport or "tcp").lower()
+    parts = [f"rtsp_transport;{transport}"]
+    if transport == "tcp":
+        parts.append("rtsp_flags;prefer_tcp")
+    parts.extend(
+        [
+            "fflags;nobuffer",
+            "flags;low_delay",
+            "stimeout;10000000",
+            "max_delay;500000",
+            "reorder_queue_size;0",
+        ]
+    )
+    extra = config.stream_ffmpeg_options.strip()
+    if extra:
+        parts.append(extra)
+    return "|".join(parts)
+
+
+def _open_ffmpeg_capture(config: VideoSourceConfig, url: str) -> cv2.VideoCapture:
+    options = _build_ffmpeg_capture_options(config, url)
+    with _FFMPEG_ENV_LOCK:
+        if options:
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = options
+        elif "OPENCV_FFMPEG_CAPTURE_OPTIONS" in os.environ:
+            del os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"]
+        capture = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+
+    capture.set(cv2.CAP_PROP_BUFFERSIZE, config.stream_buffer_size)
+    if config.width > 0:
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.width)
+    if config.height > 0:
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.height)
+    return capture
+
+
+def _valid_frame(frame: cv2.Mat | None) -> bool:
+    return frame is not None and getattr(frame, "size", 0) > 0
+
+
+def _warmup_capture(capture: cv2.VideoCapture) -> bool:
+    """Descarta frames hasta sincronizar con un keyframe H.264 válido."""
+    for attempt in range(1, _WARMUP_MAX_ATTEMPTS + 1):
+        try:
+            ok, frame = capture.read()
+        except cv2.error as exc:
+            logger.debug("Warmup frame %d: %s", attempt, exc)
+            ok, frame = False, None
+        if ok and _valid_frame(frame):
+            logger.debug("Stream sincronizado tras %d frame(s)", attempt)
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _safe_read(capture: cv2.VideoCapture) -> tuple[bool, cv2.Mat | None]:
+    try:
+        ok, frame = capture.read()
+    except cv2.error as exc:
+        logger.warning("Error leyendo frame del stream: %s", exc)
+        return False, None
+    return ok, frame
 
 
 @dataclass
@@ -94,39 +169,55 @@ class StreamSource:
         if not self.config.stream_url:
             raise RuntimeError("STREAM_URL es obligatorio para fuente stream")
         self._capture: cv2.VideoCapture | None = None
-        self._connect()
+        if not self._connect(raise_on_failure=True):
+            raise RuntimeError(
+                f"No se pudo conectar al stream: {self.config.stream_url}"
+            )
 
     @property
     def label(self) -> str:
         parsed = urlparse(self.config.stream_url)
         return f"stream {parsed.scheme}://{parsed.netloc}{parsed.path}"
 
-    def _connect(self) -> None:
+    def _release_capture(self) -> None:
         if self._capture is not None:
             self._capture.release()
+            self._capture = None
 
-        if (
-            self.config.stream_url.lower().startswith("rtsp://")
-            and self.config.rtsp_transport == "tcp"
-        ):
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+    def _connect(self, *, raise_on_failure: bool) -> bool:
+        self._release_capture()
+        url = self.config.stream_url
+        logger.info("Conectando a stream %s", url)
 
-        logger.info("Conectando a stream %s", self.config.stream_url)
-        capture = cv2.VideoCapture(self.config.stream_url, cv2.CAP_FFMPEG)
-        capture.set(cv2.CAP_PROP_BUFFERSIZE, self.config.stream_buffer_size)
+        for attempt in range(1, _CONNECT_ATTEMPTS + 1):
+            capture = _open_ffmpeg_capture(self.config, url)
+            if not capture.isOpened():
+                capture.release()
+                logger.warning(
+                    "Intento %d/%d: no se abrió el stream",
+                    attempt,
+                    _CONNECT_ATTEMPTS,
+                )
+                time.sleep(min(attempt, 2))
+                continue
 
-        if self.config.width > 0:
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.width)
-        if self.config.height > 0:
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.height)
+            if _warmup_capture(capture):
+                self._capture = capture
+                logger.info("Stream conectado")
+                return True
 
-        if not capture.isOpened():
-            raise RuntimeError(
-                f"No se pudo conectar al stream: {self.config.stream_url}"
+            capture.release()
+            logger.warning(
+                "Intento %d/%d: stream abierto pero sin frames válidos (¿keyframe?)",
+                attempt,
+                _CONNECT_ATTEMPTS,
             )
+            time.sleep(min(attempt, 2))
 
-        self._capture = capture
-        logger.info("Stream conectado")
+        if raise_on_failure:
+            return False
+        logger.error("No se pudo estabilizar el stream %s", url)
+        return False
 
     @property
     def is_open(self) -> bool:
@@ -135,7 +226,7 @@ class StreamSource:
     def read(self) -> tuple[bool, cv2.Mat | None]:
         if self._capture is None:
             return False, None
-        return self._capture.read()
+        return _safe_read(self._capture)
 
     def frames(self) -> Iterator[cv2.Mat]:
         failures = 0
@@ -145,7 +236,7 @@ class StreamSource:
                 continue
 
             ok, frame = self.read()
-            if ok and frame is not None:
+            if ok and _valid_frame(frame):
                 failures = 0
                 yield frame
                 continue
@@ -168,16 +259,17 @@ class StreamSource:
             "Reconectando al stream en %ds...",
             self.config.stream_reconnect_sec,
         )
-        if self._capture is not None:
-            self._capture.release()
-            self._capture = None
+        self._release_capture()
         time.sleep(self.config.stream_reconnect_sec)
-        self._connect()
+        while not self._connect(raise_on_failure=False):
+            logger.warning(
+                "Reintento de conexión en %ds...",
+                self.config.stream_reconnect_sec,
+            )
+            time.sleep(self.config.stream_reconnect_sec)
 
     def release(self) -> None:
-        if self._capture is not None:
-            self._capture.release()
-            self._capture = None
+        self._release_capture()
 
 
 @dataclass
@@ -190,41 +282,53 @@ class TuyaStreamSource:
     def __post_init__(self) -> None:
         self._capture: cv2.VideoCapture | None = None
         self._current_url = ""
-        self._connect()
+        if not self._connect(raise_on_failure=True):
+            raise RuntimeError(
+                f"No se pudo abrir stream Tuya para {self.config.tuya_device_id}"
+            )
 
     @property
     def label(self) -> str:
         return f"Tuya · {self.config.tuya_device_id[:12]}…"
 
-    def _connect(self) -> None:
+    def _release_capture(self) -> None:
         if self._capture is not None:
             self._capture.release()
+            self._capture = None
+
+    def _connect(self, *, raise_on_failure: bool) -> bool:
+        self._release_capture()
 
         client = self.store.get_tuya_client()
         if not client.is_configured:
-            raise RuntimeError(
-                "Tuya no configurado. Ve a Admin → Tuya y guarda Access ID, Key y UID"
-            )
+            if raise_on_failure:
+                raise RuntimeError(
+                    "Tuya no configurado. Ve a Admin → Tuya y guarda Access ID, Key y UID"
+                )
+            return False
 
         stream_type = self.config.tuya_stream_type or "rtsp"
         self._current_url = client.allocate_stream(
             self.config.tuya_device_id, stream_type
         )
-
-        if self._current_url.lower().startswith("rtsp://") and self.config.rtsp_transport == "tcp":
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
-
         logger.info("Conectando stream Tuya (%s)", stream_type)
-        capture = cv2.VideoCapture(self._current_url, cv2.CAP_FFMPEG)
-        capture.set(cv2.CAP_PROP_BUFFERSIZE, self.config.stream_buffer_size)
 
-        if not capture.isOpened():
-            raise RuntimeError(
-                f"No se pudo abrir stream Tuya para {self.config.tuya_device_id}"
-            )
+        for attempt in range(1, _CONNECT_ATTEMPTS + 1):
+            capture = _open_ffmpeg_capture(self.config, self._current_url)
+            if not capture.isOpened():
+                capture.release()
+                time.sleep(min(attempt, 2))
+                continue
+            if _warmup_capture(capture):
+                self._capture = capture
+                logger.info("Stream Tuya conectado")
+                return True
+            capture.release()
+            time.sleep(min(attempt, 2))
 
-        self._capture = capture
-        logger.info("Stream Tuya conectado")
+        if raise_on_failure:
+            return False
+        return False
 
     @property
     def is_open(self) -> bool:
@@ -233,7 +337,7 @@ class TuyaStreamSource:
     def read(self) -> tuple[bool, cv2.Mat | None]:
         if self._capture is None:
             return False, None
-        return self._capture.read()
+        return _safe_read(self._capture)
 
     def frames(self) -> Iterator[cv2.Mat]:
         failures = 0
@@ -243,7 +347,7 @@ class TuyaStreamSource:
                 continue
 
             ok, frame = self.read()
-            if ok and frame is not None:
+            if ok and _valid_frame(frame):
                 failures = 0
                 yield frame
                 continue
@@ -260,17 +364,14 @@ class TuyaStreamSource:
             "Renovando stream Tuya en %ds (URLs expiran)…",
             self.config.stream_reconnect_sec,
         )
-        if self._capture is not None:
-            self._capture.release()
-            self._capture = None
+        self._release_capture()
         self.store.invalidate_tuya_client()
         time.sleep(self.config.stream_reconnect_sec)
-        self._connect()
+        while not self._connect(raise_on_failure=False):
+            time.sleep(self.config.stream_reconnect_sec)
 
     def release(self) -> None:
-        if self._capture is not None:
-            self._capture.release()
-            self._capture = None
+        self._release_capture()
 
 
 class VideoSource(ABC):

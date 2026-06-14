@@ -30,6 +30,13 @@ También basta con definir `STREAM_URL` sin `VIDEO_SOURCE`; se detecta automáti
 
 La app reconecta sola si el stream se cae (`STREAM_RECONNECT_SEC=5`).
 
+Si ves en logs `Received packet without a start chunk`, suele ser H.264 mal sincronizado (v4l2rtspserver, cámara barata o reconexiones frecuentes). La app ahora espera un keyframe válido al conectar y reintenta con TCP. Si persiste:
+
+- Confirma **RTSP_TRANSPORT=tcp** (Admin → cámara o `.env`)
+- Prueba el stream: `ffplay -rtsp_transport tcp rtsp://IP:8554/unicast`
+- Usa **go2rtc** como proxy intermedio (estabiliza muchos streams Tuya/v4l2)
+- Alternativa: URL **HTTP/MJPEG** de go2rtc (`http://IP:1984/api/stream.mjpeg?src=...`)
+
 **Dependencia de sistema para RTSP:**
 
 ```bash
