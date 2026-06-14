@@ -27,7 +27,7 @@ RUN apt-get update \
 WORKDIR /app
 
 RUN useradd --create-home --uid 1000 --shell /bin/bash appuser \
-    && mkdir -p /app/snapshots \
+    && mkdir -p /app/snapshots /app/data \
     && chown -R appuser:appuser /app
 
 COPY requirements-base.txt requirements-container.txt ./
@@ -40,14 +40,17 @@ COPY main.py ./
 COPY src/ ./src/
 COPY scripts/container-entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && chown -R appuser:appuser /app
 
 USER appuser
 
 # Descarga YOLOv8n en build (evita red en el primer arranque)
 RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
-VOLUME ["/app/snapshots"]
+USER root
+
+VOLUME ["/app/snapshots", "/app/data"]
 
 EXPOSE 8080
 

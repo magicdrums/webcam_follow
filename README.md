@@ -110,12 +110,47 @@ cp .env.container.example .env
 chmod +x scripts/build-image-local.sh
 ./scripts/build-image-local.sh
 
-podman compose up -d
+# Fedora / rootless: activa el socket que usa `podman compose` (docker-compose plugin)
+systemctl --user enable --now podman.socket
+export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+
+podman compose up -d --build
 podman compose logs -f
 ```
 
 Abre **http://localhost:8080** para ver el panel web.  
 **Administración:** http://localhost:8080/admin
+
+#### Si `podman compose` falla con `podman.sock: no such file`
+
+`podman compose` delega en el plugin **docker-compose**, que habla con Podman vía socket Unix. En Fedora rootless hay que activarlo una vez:
+
+```bash
+systemctl --user enable --now podman.socket
+export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+podman compose up -d --build
+```
+
+Comprueba que el socket existe:
+
+```bash
+ls -l /run/user/$(id -u)/podman/podman.sock
+systemctl --user status podman.socket
+```
+
+Alternativa sin docker-compose: `podman-compose up -d --build` (paquete `podman-compose`).
+
+#### Si falla `Permission denied` en `/app/data`
+
+Suele ser propiedad del directorio en el host o SELinux (Fedora):
+
+```bash
+chown -R $(id -u):$(id -g) data snapshots
+chmod u+rwX data snapshots
+# Solo si SELinux está en enforcing:
+chcon -Rt container_file_t data snapshots
+podman compose up -d --build
+```
 
 ### Interfaz web
 

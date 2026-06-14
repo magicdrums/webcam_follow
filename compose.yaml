@@ -19,8 +19,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./snapshots:/app/snapshots
-      - ./data:/app/data
+      # :Z relabel SELinux en Fedora para permitir escritura desde el contenedor
+      - ./snapshots:/app/snapshots:Z
+      - ./data:/app/data:Z
     restart: unless-stopped
     # RTSP en LAN: la red bridge suele bastar. Usa host si hay problemas de multicast/UDP.
     # network_mode: host
