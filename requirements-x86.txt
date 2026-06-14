@@ -1,0 +1,2 @@
+-r requirements-base.txt
+opencv-python>=4.9.0

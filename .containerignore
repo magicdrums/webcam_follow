@@ -1,0 +1,16 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.git/
+.gitignore
+.env
+snapshots/
+*.pt
+.idea/
+.vscode/
+*.swp
+README.md
+scripts/install.sh
+scripts/webcam-follow.service

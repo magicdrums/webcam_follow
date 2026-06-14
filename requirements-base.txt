@@ -1,0 +1,6 @@
+numpy>=1.26.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+ultralytics>=8.3.0
+tuya-connector-python>=0.1.2
+flask>=3.0.0

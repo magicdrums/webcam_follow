@@ -1,0 +1,457 @@
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from dataclasses import dataclass, field, replace
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import cv2
+
+from src.admin.camera_config import camera_snapshot_dir, camera_to_video_config
+from src.admin.models import AlertHistoryEntry
+from src.admin.store import AdminStore
+from src.detector import DetectionEvent, EventType, VisionDetector
+from src.admin.notifications import StoreNotificationService
+from src.notifier import save_snapshot
+from src.platform import log_platform_info
+from src.video_source import open_video_source
+
+if TYPE_CHECKING:
+    from src.admin.models import Camera
+    from src.config import AppConfig
+
+logger = logging.getLogger(__name__)
+
+PRIORITY = {
+    EventType.OBJECT_CHANGE: 5,
+    EventType.SCENE_CHANGE: 4,
+    EventType.OBJECT: 3,
+    EventType.MOTION: 2,
+}
+
+
+def _pick_primary_event(events: list[DetectionEvent]) -> DetectionEvent:
+    return max(events, key=lambda event: PRIORITY.get(event.event_type, 0))
+
+
+@dataclass
+class LiveStatus:
+    camera_id: str = ""
+    camera_name: str = ""
+    motion_detected: bool = False
+    motion_area: int = 0
+    object_counts: dict[str, int] = field(default_factory=dict)
+    person_count: int = 0
+    total_objects: int = 0
+    yolo_active: bool = False
+    fps: float = 0.0
+    video_label: str = ""
+    platform_label: str = ""
+    stream_url: str = ""
+    connected: bool = False
+    last_update: str = ""
+
+
+@dataclass
+class AlertRecord:
+    camera_id: str
+    camera_name: str
+    timestamp: str
+    event_type: str
+    message: str
+    object_counts: dict[str, int]
+    snapshot: str | None = None
+
+
+class CameraWorker:
+    MAX_ALERTS = 100
+    JPEG_QUALITY = 80
+
+    def __init__(
+        self,
+        camera: Camera,
+        app_config: AppConfig,
+        store: AdminStore,
+    ) -> None:
+        self.camera = camera
+        self.app_config = app_config
+        self.store = store
+        self.snapshot_dir = camera_snapshot_dir(app_config, camera.id)
+        self.video_config = camera_to_video_config(camera, app_config)
+        self._lock = threading.Lock()
+        self._latest_jpeg: bytes | None = None
+        self._status = LiveStatus(camera_id=camera.id, camera_name=camera.name)
+        self._alerts: list[AlertRecord] = []
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+        self._rule_cooldowns: dict[str, float] = {}
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"camera-{self.camera.id[:8]}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=10)
+
+    def get_jpeg_frame(self) -> bytes | None:
+        with self._lock:
+            return self._latest_jpeg
+
+    def get_status(self) -> LiveStatus:
+        with self._lock:
+            return replace(self._status)
+
+    def get_alerts(self, limit: int = 50) -> list[AlertRecord]:
+        with self._lock:
+            return list(self._alerts[:limit])
+
+    def list_snapshots(self, limit: int = 24) -> list[dict[str, str]]:
+        if not self.snapshot_dir.exists():
+            return []
+        files = sorted(
+            self.snapshot_dir.glob("*.jpg"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        return [
+            {
+                "name": path.name,
+                "url": f"/snapshots/{self.camera.id}/{path.name}",
+                "time": datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+            }
+            for path in files[:limit]
+        ]
+
+    def _should_notify_rule(self, rule_id: str, cooldown_sec: int) -> bool:
+        elapsed = time.monotonic() - self._rule_cooldowns.get(rule_id, 0.0)
+        return elapsed >= cooldown_sec
+
+    def _handle_events(
+        self,
+        events: list[DetectionEvent],
+        frame,
+        notifications: StoreNotificationService,
+    ) -> None:
+        if not events:
+            return
+
+        primary = _pick_primary_event(events)
+        snapshot_name = None
+        snapshot_path = None
+        if self.app_config.detection.save_snapshots:
+            snapshot_path = save_snapshot(frame, self.snapshot_dir, primary)
+            snapshot_name = snapshot_path.name
+
+        rules = self.store.matching_rules(
+            self.camera.id,
+            primary.event_type.value,
+            primary.person_count,
+        )
+
+        notified = False
+        if rules:
+            for rule in rules:
+                if not self._should_notify_rule(rule.id, rule.cooldown_sec):
+                    continue
+                logger.info(
+                    "Alerta [%s] regla '%s': %s",
+                    self.camera.name,
+                    rule.name,
+                    primary.message,
+                )
+                notifications.notify(
+                    primary,
+                    snapshot_path,
+                    use_email=rule.notify_email,
+                    use_telegram=rule.notify_telegram,
+                    use_whatsapp=rule.notify_whatsapp,
+                )
+                self._rule_cooldowns[rule.id] = time.monotonic()
+                notified = True
+        else:
+            logger.info(
+                "Alerta [%s]: %s (sin regla coincidente, no notificado)",
+                self.camera.name,
+                primary.message,
+            )
+
+        history = AlertHistoryEntry.create(
+            camera_id=self.camera.id,
+            camera_name=self.camera.name,
+            event_type=primary.event_type.value,
+            message=primary.message,
+            object_counts=dict(primary.object_counts),
+            snapshot=snapshot_name,
+            notified=notified,
+        )
+        self.store.add_history(history)
+
+        record = AlertRecord(
+            camera_id=self.camera.id,
+            camera_name=self.camera.name,
+            timestamp=primary.timestamp.isoformat(),
+            event_type=primary.event_type.value,
+            message=primary.message,
+            object_counts=dict(primary.object_counts),
+            snapshot=snapshot_name,
+        )
+        with self._lock:
+            self._alerts.insert(0, record)
+            del self._alerts[self.MAX_ALERTS :]
+
+    def _update_fps(self, frame_count: int, fps_timer: float) -> tuple[int, float, float]:
+        frame_count += 1
+        now = time.monotonic()
+        elapsed = now - fps_timer
+        fps = self._status.fps
+        if elapsed >= 1.0:
+            fps = round(frame_count / elapsed, 1)
+            frame_count = 0
+            fps_timer = now
+        return frame_count, fps_timer, fps
+
+    def _publish_frame(
+        self,
+        frame,
+        motion_detected: bool,
+        motion_area: int,
+        object_counts: dict[str, int],
+        yolo_active: bool,
+        fps: float,
+    ) -> None:
+        ok, encoded = cv2.imencode(
+            ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self.JPEG_QUALITY]
+        )
+        if not ok:
+            return
+
+        status = LiveStatus(
+            camera_id=self.camera.id,
+            camera_name=self.camera.name,
+            motion_detected=motion_detected,
+            motion_area=motion_area,
+            object_counts=object_counts,
+            person_count=object_counts.get("person", 0),
+            total_objects=sum(object_counts.values()),
+            yolo_active=yolo_active,
+            fps=fps,
+            video_label=self._status.video_label,
+            platform_label=self.app_config.detection.platform_label,
+            stream_url=self._mask_stream_url(self.video_config.stream_url),
+            connected=True,
+            last_update=datetime.now().isoformat(timespec="seconds"),
+        )
+        with self._lock:
+            self._latest_jpeg = encoded.tobytes()
+            self._status = status
+
+    @staticmethod
+    def _mask_stream_url(url: str) -> str:
+        if not url:
+            return ""
+        if "@" in url:
+            scheme, rest = url.split("://", 1)
+            if "@" in rest:
+                _, host_part = rest.rsplit("@", 1)
+                return f"{scheme}://***@{host_part}"
+        return url
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self._run_capture_loop()
+            except RuntimeError as exc:
+                logger.error("[%s] %s", self.camera.name, exc)
+                with self._lock:
+                    self._status.connected = False
+                if self._stop.is_set():
+                    break
+                time.sleep(5)
+
+    def _run_capture_loop(self) -> None:
+        video = open_video_source(self.video_config, self.store)
+        detector = VisionDetector(self.app_config.detection)
+        notifications = StoreNotificationService(self.store)
+
+        with self._lock:
+            self._status.video_label = video.label
+
+        logger.info("[%s] Fuente activa: %s", self.camera.name, video.label)
+        last_detection = 0.0
+        last_motion = False
+        last_motion_area = 0
+        last_counts: dict[str, int] = {}
+        last_yolo_active = False
+        frame_count = 0
+        fps_timer = time.monotonic()
+
+        try:
+            for frame in video.frames():
+                if self._stop.is_set():
+                    break
+
+                now = time.monotonic()
+                frame_count, fps_timer, fps = self._update_fps(frame_count, fps_timer)
+                with self._lock:
+                    self._status.fps = fps
+
+                if now - last_detection < self.app_config.detection.detection_interval_sec:
+                    self._publish_frame(
+                        frame, last_motion, last_motion_area, last_counts, last_yolo_active, fps
+                    )
+                    continue
+
+                last_detection = now
+                events, annotated = detector.analyze(frame)
+                self._handle_events(events, annotated, notifications)
+
+                last_motion = any(e.event_type == EventType.MOTION for e in events)
+                for event in events:
+                    if event.motion_area:
+                        last_motion_area = event.motion_area
+                if events:
+                    last_counts = dict(events[-1].object_counts)
+                last_yolo_active = (
+                    not self.app_config.detection.yolo_on_motion_only or last_motion
+                )
+
+                self._publish_frame(
+                    annotated,
+                    last_motion,
+                    last_motion_area,
+                    last_counts,
+                    last_yolo_active,
+                    fps,
+                )
+        finally:
+            video.release()
+            with self._lock:
+                self._status.connected = False
+            if not self._stop.is_set():
+                raise RuntimeError("Fuente de video interrumpida")
+
+
+class MonitorManager:
+    def __init__(self, app_config: AppConfig, store: AdminStore) -> None:
+        self.app_config = app_config
+        self.store = store
+        self._workers: dict[str, CameraWorker] = {}
+        self._active_camera_id: str | None = None
+        self._lock = threading.Lock()
+        self._started = False
+
+    def start(self) -> None:
+        if self._started:
+            self.reload()
+            return
+        log_platform_info(self.app_config.platform)
+        self.store.bootstrap_from_env(self.app_config)
+        self.reload()
+        self._started = True
+
+    def stop(self) -> None:
+        for worker in list(self._workers.values()):
+            worker.stop()
+        self._workers.clear()
+        self._started = False
+
+    def reload(self) -> None:
+        cameras = self.store.list_cameras(enabled_only=True)
+        enabled_ids = {camera.id for camera in cameras}
+
+        for camera_id in list(self._workers):
+            if camera_id not in enabled_ids:
+                self._workers[camera_id].stop()
+                del self._workers[camera_id]
+
+        for camera in cameras:
+            if camera.id in self._workers:
+                worker = self._workers[camera.id]
+                worker.stop()
+            worker = CameraWorker(camera, self.app_config, self.store)
+            self._workers[camera.id] = worker
+            worker.start()
+
+        with self._lock:
+            if not self._active_camera_id and cameras:
+                self._active_camera_id = cameras[0].id
+            elif self._active_camera_id and self._active_camera_id not in enabled_ids:
+                self._active_camera_id = cameras[0].id if cameras else None
+
+    def set_active_camera(self, camera_id: str) -> bool:
+        if camera_id not in self._workers:
+            return False
+        with self._lock:
+            self._active_camera_id = camera_id
+        return True
+
+    def get_active_camera_id(self) -> str | None:
+        with self._lock:
+            return self._active_camera_id
+
+    def get_worker(self, camera_id: str | None = None) -> CameraWorker | None:
+        cid = camera_id or self.get_active_camera_id()
+        if not cid:
+            return None
+        return self._workers.get(cid)
+
+    def list_cameras_summary(self) -> list[dict]:
+        result = []
+        for camera in self.store.list_cameras():
+            worker = self._workers.get(camera.id)
+            status = worker.get_status() if worker else None
+            result.append(
+                {
+                    "id": camera.id,
+                    "name": camera.name,
+                    "enabled": camera.enabled,
+                    "source_type": camera.source_type,
+                    "stream_url": camera.stream_url,
+                    "tuya_device_id": camera.tuya_device_id,
+                    "camera_index": camera.camera_index,
+                    "connected": status.connected if status else False,
+                    "fps": status.fps if status else 0,
+                    "active": camera.id == self.get_active_camera_id(),
+                }
+            )
+        return result
+
+    def get_jpeg_frame(self, camera_id: str | None = None) -> bytes | None:
+        worker = self.get_worker(camera_id)
+        return worker.get_jpeg_frame() if worker else None
+
+    def get_status(self, camera_id: str | None = None) -> LiveStatus | None:
+        worker = self.get_worker(camera_id)
+        return worker.get_status() if worker else None
+
+    def get_alerts(self, limit: int = 50, camera_id: str | None = None) -> list[AlertRecord]:
+        if camera_id:
+            worker = self.get_worker(camera_id)
+            return worker.get_alerts(limit) if worker else []
+        merged: list[AlertRecord] = []
+        for worker in self._workers.values():
+            merged.extend(worker.get_alerts(limit))
+        merged.sort(key=lambda item: item.timestamp, reverse=True)
+        return merged[:limit]
+
+    def list_snapshots(self, limit: int = 24, camera_id: str | None = None) -> list[dict]:
+        if camera_id:
+            worker = self.get_worker(camera_id)
+            return worker.list_snapshots(limit) if worker else []
+        merged: list[dict] = []
+        for worker in self._workers.values():
+            merged.extend(worker.list_snapshots(limit))
+        merged.sort(key=lambda item: item["time"], reverse=True)
+        return merged[:limit]

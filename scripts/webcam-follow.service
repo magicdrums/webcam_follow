@@ -1,0 +1,16 @@
+[Unit]
+Description=Webcam Follow - detección de movimiento y personas
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/webcam_follow
+Environment=PATH=/home/pi/webcam_follow/.venv/bin
+ExecStart=/home/pi/webcam_follow/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

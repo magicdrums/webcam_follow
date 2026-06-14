@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administración — Webcam Follow</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="header">
+    <div class="header__brand">
+      <span class="header__logo">◉</span>
+      <div>
+        <h1>Administración</h1>
+        <p class="header__subtitle">Cámaras, alertas y canales</p>
+      </div>
+    </div>
+    <div class="header__actions">
+      <a href="/" class="btn btn--link">← Panel en vivo</a>
+    </div>
+  </header>
+
+  <main class="admin-layout">
+    <nav class="tabs">
+      <button class="tabs__btn tabs__btn--active" data-tab="cameras" type="button">Cámaras</button>
+      <button class="tabs__btn" data-tab="tuya" type="button">Tuya IoT</button>
+      <button class="tabs__btn" data-tab="rules" type="button">Reglas de alerta</button>
+      <button class="tabs__btn" data-tab="channels" type="button">Canales</button>
+      <button class="tabs__btn" data-tab="history" type="button">Historial</button>
+    </nav>
+
+    <!-- Cámaras -->
+    <section id="tab-cameras" class="tab-panel tab-panel--active">
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Cámaras registradas</h2>
+          <button id="btn-new-camera" class="btn btn--primary" type="button">+ Nueva cámara</button>
+        </div>
+        <div id="cameras-table" class="table-wrap"></div>
+      </div>
+
+      <div id="camera-form-panel" class="panel panel--form hidden">
+        <h2 id="camera-form-title">Nueva cámara</h2>
+        <form id="camera-form" class="form">
+          <input type="hidden" id="camera-id">
+          <label class="form__field">
+            <span>Nombre</span>
+            <input type="text" id="camera-name" required placeholder="Entrada, Garaje…">
+          </label>
+          <label class="form__field">
+            <span>Tipo de fuente</span>
+            <select id="camera-source-type">
+              <option value="local">Webcam local</option>
+              <option value="stream">Stream RTSP/HTTP</option>
+              <option value="tuya">Tuya IoT (Cloud)</option>
+            </select>
+          </label>
+          <label class="form__field hidden" id="field-tuya-device">
+            <span>Cámara Tuya</span>
+            <select id="camera-tuya-device"></select>
+          </label>
+          <label class="form__field hidden" id="field-tuya-stream-type">
+            <span>Tipo de stream Tuya</span>
+            <select id="camera-tuya-stream-type">
+              <option value="rtsp">RTSP</option>
+              <option value="hls">HLS</option>
+            </select>
+          </label>
+          <label class="form__field" id="field-camera-index">
+            <span>Índice de cámara</span>
+            <input type="number" id="camera-index" min="0" value="0">
+          </label>
+          <label class="form__field hidden" id="field-stream-url">
+            <span>URL del stream</span>
+            <input type="url" id="camera-stream-url" placeholder="rtsp://192.168.1.100:8554/unicast">
+          </label>
+          <label class="form__field hidden" id="field-rtsp-transport">
+            <span>Transporte RTSP</span>
+            <select id="camera-rtsp-transport">
+              <option value="tcp">TCP</option>
+              <option value="udp">UDP</option>
+            </select>
+          </label>
+          <label class="form__field form__field--check">
+            <input type="checkbox" id="camera-enabled" checked>
+            <span>Activa (monitorear)</span>
+          </label>
+          <div class="form__actions">
+            <button class="btn btn--primary" type="submit">Guardar</button>
+            <button class="btn" type="button" id="camera-form-cancel">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Tuya IoT -->
+    <section id="tab-tuya" class="tab-panel">
+      <div class="panel">
+        <h2>Cuenta Tuya Cloud</h2>
+        <p class="muted form-hint">
+          <strong>Limitación conocida:</strong> Tuya restringe cada vez más el acceso a vídeo en proyectos personales.
+          Hace falta suscribirse al servicio <em>IoT Video Live Stream</em> y vincular la cuenta de la app
+          (Devices → Link Tuya App Account). En muchas cuentas esa opción ya no está disponible o el stream falla tras la prueba gratuita.
+        </p>
+        <p class="muted form-hint">
+          Si el portal no te deja vincular cámaras, usa
+          <a href="https://github.com/AlexxIT/go2rtc" target="_blank" rel="noopener">go2rtc</a>
+          y añade la cámara como <strong>Stream RTSP</strong>.
+          Guía en el repo: <code>docs/guia-tuya-go2rtc.md</code>.
+        </p>
+        <p class="muted form-hint">
+          Si aún tienes acceso al Developer Platform: proyecto en
+          <a href="https://platform.tuya.com/" target="_blank" rel="noopener">platform.tuya.com</a>,
+          autoriza <em>IoT Video Live Stream</em>, vincula Smart Life/Tuya Smart y copia Access ID, Access Key y UID.
+        </p>
+        <form id="tuya-config-form" class="form form--wide">
+          <label class="form__field form__field--check">
+            <input type="checkbox" id="tuya-enabled">
+            <span>Integración Tuya activa</span>
+          </label>
+          <div class="form__grid">
+            <label class="form__field">
+              <span>Access ID</span>
+              <input type="text" id="tuya-access-id" autocomplete="off">
+            </label>
+            <label class="form__field">
+              <span>Access Key</span>
+              <input type="password" id="tuya-access-key" placeholder="Dejar vacío para no cambiar" autocomplete="new-password">
+            </label>
+            <label class="form__field">
+              <span>UID (usuario app)</span>
+              <input type="text" id="tuya-uid" placeholder="ay156402688xxxxvoY5W">
+            </label>
+            <label class="form__field">
+              <span>Región</span>
+              <select id="tuya-region">
+                <option value="eu">Europa (eu)</option>
+                <option value="us">América (us)</option>
+                <option value="cn">China (cn)</option>
+                <option value="in">India (in)</option>
+              </select>
+            </label>
+            <label class="form__field">
+              <span>Stream por defecto</span>
+              <select id="tuya-default-stream">
+                <option value="rtsp">RTSP</option>
+                <option value="hls">HLS</option>
+              </select>
+            </label>
+          </div>
+          <div class="form__actions">
+            <button class="btn btn--primary" type="submit">Guardar Tuya</button>
+            <button class="btn" type="button" id="btn-tuya-test">Probar conexión</button>
+            <button class="btn" type="button" id="btn-tuya-refresh">Buscar cámaras</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Dispositivos Tuya</h2>
+        </div>
+        <div id="tuya-devices-table" class="table-wrap">
+          <p class="muted">Configura Tuya y pulsa «Buscar cámaras».</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Reglas -->
+    <section id="tab-rules" class="tab-panel">
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Reglas de alerta</h2>
+          <button id="btn-new-rule" class="btn btn--primary" type="button">+ Nueva regla</button>
+        </div>
+        <p class="muted form-hint">Las reglas definen qué eventos generan notificaciones y por qué canal.</p>
+        <div id="rules-table" class="table-wrap"></div>
+      </div>
+
+      <div id="rule-form-panel" class="panel panel--form hidden">
+        <h2 id="rule-form-title">Nueva regla</h2>
+        <form id="rule-form" class="form">
+          <input type="hidden" id="rule-id">
+          <label class="form__field">
+            <span>Nombre</span>
+            <input type="text" id="rule-name" required placeholder="Persona detectada">
+          </label>
+          <label class="form__field">
+            <span>Cámaras (vacío = todas)</span>
+            <select id="rule-cameras" multiple size="4"></select>
+          </label>
+          <fieldset class="form__fieldset">
+            <legend>Eventos</legend>
+            <label><input type="checkbox" name="event" value="movimiento" checked> Movimiento</label>
+            <label><input type="checkbox" name="event" value="objeto_detectado" checked> Objeto detectado</label>
+            <label><input type="checkbox" name="event" value="cambio_objetos" checked> Cambio de objetos</label>
+            <label><input type="checkbox" name="event" value="cambio_escena"> Cambio de escena</label>
+          </fieldset>
+          <label class="form__field">
+            <span>Mín. personas (0 = cualquiera)</span>
+            <input type="number" id="rule-min-persons" min="0" value="0">
+          </label>
+          <label class="form__field">
+            <span>Cooldown (segundos)</span>
+            <input type="number" id="rule-cooldown" min="5" value="60">
+          </label>
+          <fieldset class="form__fieldset">
+            <legend>Canales de notificación</legend>
+            <label><input type="checkbox" id="rule-email"> Email</label>
+            <label><input type="checkbox" id="rule-telegram"> Telegram</label>
+            <label><input type="checkbox" id="rule-whatsapp"> WhatsApp</label>
+          </fieldset>
+          <label class="form__field form__field--check">
+            <input type="checkbox" id="rule-enabled" checked>
+            <span>Regla activa</span>
+          </label>
+          <div class="form__actions">
+            <button class="btn btn--primary" type="submit">Guardar</button>
+            <button class="btn" type="button" id="rule-form-cancel">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Canales de notificación -->
+    <section id="tab-channels" class="tab-panel">
+      <div class="panel">
+        <h2>Canales de notificación</h2>
+        <p class="muted form-hint">
+          Configura las credenciales aquí. Las reglas de alerta eligen qué canal usar en cada evento.
+        </p>
+        <form id="channels-form" class="form form--wide">
+          <fieldset class="form__fieldset">
+            <legend>Email (SMTP)</legend>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="ch-email-enabled">
+              <span>Activar email</span>
+            </label>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Servidor SMTP</span>
+                <input type="text" id="ch-smtp-host" placeholder="smtp.gmail.com">
+              </label>
+              <label class="form__field">
+                <span>Puerto</span>
+                <input type="number" id="ch-smtp-port" value="587">
+              </label>
+              <label class="form__field">
+                <span>Usuario SMTP</span>
+                <input type="text" id="ch-smtp-user" autocomplete="off">
+              </label>
+              <label class="form__field">
+                <span>Contraseña / app password</span>
+                <input type="password" id="ch-smtp-password" placeholder="Dejar vacío para no cambiar" autocomplete="new-password">
+              </label>
+              <label class="form__field">
+                <span>Remitente (From)</span>
+                <input type="email" id="ch-email-from">
+              </label>
+              <label class="form__field">
+                <span>Destinatario (To)</span>
+                <input type="email" id="ch-email-to">
+              </label>
+            </div>
+            <button class="btn btn--sm" type="button" data-test-channel="email">Probar email</button>
+          </fieldset>
+
+          <fieldset class="form__fieldset">
+            <legend>Telegram</legend>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="ch-telegram-enabled">
+              <span>Activar Telegram</span>
+            </label>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Bot token</span>
+                <input type="password" id="ch-telegram-token" placeholder="Dejar vacío para no cambiar" autocomplete="off">
+              </label>
+              <label class="form__field">
+                <span>Chat ID</span>
+                <input type="text" id="ch-telegram-chat-id">
+              </label>
+            </div>
+            <button class="btn btn--sm" type="button" data-test-channel="telegram">Probar Telegram</button>
+          </fieldset>
+
+          <fieldset class="form__fieldset">
+            <legend>WhatsApp (Twilio)</legend>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="ch-whatsapp-enabled">
+              <span>Activar WhatsApp</span>
+            </label>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Account SID</span>
+                <input type="text" id="ch-twilio-sid" autocomplete="off">
+              </label>
+              <label class="form__field">
+                <span>Auth token</span>
+                <input type="password" id="ch-twilio-token" placeholder="Dejar vacío para no cambiar" autocomplete="off">
+              </label>
+              <label class="form__field">
+                <span>Número origen</span>
+                <input type="text" id="ch-twilio-from" placeholder="whatsapp:+14155238886">
+              </label>
+              <label class="form__field">
+                <span>Número destino</span>
+                <input type="text" id="ch-whatsapp-to" placeholder="whatsapp:+34600123456">
+              </label>
+            </div>
+            <button class="btn btn--sm" type="button" data-test-channel="whatsapp">Probar WhatsApp</button>
+          </fieldset>
+
+          <div class="form__actions">
+            <button class="btn btn--primary" type="submit">Guardar canales</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Historial -->
+    <section id="tab-history" class="tab-panel">
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Historial de alertas</h2>
+          <button id="btn-clear-history" class="btn btn--danger" type="button">Vaciar historial</button>
+        </div>
+        <div id="history-table" class="table-wrap"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="{{ url_for('static', filename='admin.js') }}"></script>
+</body>
+</html>

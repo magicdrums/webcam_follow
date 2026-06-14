@@ -1,0 +1,29 @@
+services:
+  webcam-follow:
+    image: localhost/webcam-follow:latest
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: webcam-follow
+    env_file:
+      - .env
+    environment:
+      CONTAINER: "1"
+      SHOW_PREVIEW: "false"
+      WEB_ENABLED: "true"
+      WEB_HOST: "0.0.0.0"
+      WEB_PORT: "8080"
+      YOLO_DEVICE: cpu
+      SNAPSHOT_DIR: /app/snapshots
+    DATA_DIR: /app/data
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./snapshots:/app/snapshots
+      - ./data:/app/data
+    restart: unless-stopped
+    # RTSP en LAN: la red bridge suele bastar. Usa host si hay problemas de multicast/UDP.
+    # network_mode: host
+    # Webcam USB local (descomenta en el host):
+    # devices:
+    #   - /dev/video0:/dev/video0

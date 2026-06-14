@@ -1,0 +1,91 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+*.egg
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Tests y cobertura
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# --- Configuración local (secretos) ---
+.env
+.env.*
+!.env.example
+!.env.container.example
+
+# Estado de la app (cámaras, reglas, tokens Tuya/SMTP/Telegram)
+data/*
+!data/.gitkeep
+!data/README.md
+
+# Capturas de eventos
+snapshots/
+
+# --- YOLO / Ultralytics ---
+*.pt
+*.pth
+*.onnx
+*.engine
+runs/
+weights/
+wandb/
+
+# Descargas de modelos en el directorio del proyecto
+yolov8*.pt
+yolov8*.onnx
+
+# --- go2rtc (puente Tuya; suele llevar contraseñas) ---
+go2rtc.yaml
+go2rtc*.yaml
+
+# --- Contenedores / build local ---
+*.tar
+*.tar.gz
+
+# --- Logs y temporales ---
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*~
+*.bak
+
+# --- Sistema operativo ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# --- IDEs y editores ---
+.idea/
+.vscode/
+*.code-workspace
+.project
+.pydevproject
+.settings/

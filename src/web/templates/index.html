@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webcam Follow</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="header">
+    <div class="header__brand">
+      <span class="header__logo">◉</span>
+      <div>
+        <h1>Webcam Follow</h1>
+        <p class="header__subtitle">Detección en tiempo real</p>
+      </div>
+    </div>
+    <div class="header__actions">
+      <select id="camera-select" class="select" aria-label="Seleccionar cámara"></select>
+      <a href="/admin" class="btn btn--link">Administración</a>
+      <span id="conn-badge" class="badge badge--offline">Desconectado</span>
+      <span id="fps-badge" class="badge">0 FPS</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel panel--video">
+      <div class="panel__head">
+        <h2>Vista en vivo</h2>
+        <span id="video-source" class="muted">—</span>
+      </div>
+      <div class="video-wrap">
+        <img id="live-feed" src="/video_feed" alt="Transmisión en vivo">
+        <div id="video-placeholder" class="video-placeholder">Esperando señal…</div>
+      </div>
+    </section>
+
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>Estado</h2>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__label">Movimiento</span>
+            <span id="stat-motion" class="stat__value stat__value--no">NO</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Personas</span>
+            <span id="stat-persons" class="stat__value">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Objetos</span>
+            <span id="stat-objects" class="stat__value">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">YOLO</span>
+            <span id="stat-yolo" class="stat__value">—</span>
+          </div>
+        </div>
+        <div id="object-tags" class="tags"></div>
+        <dl class="meta">
+          <div><dt>Cámara</dt><dd id="meta-camera">—</dd></div>
+          <div><dt>Plataforma</dt><dd id="meta-platform">—</dd></div>
+          <div><dt>Fuente</dt><dd id="meta-stream">—</dd></div>
+          <div><dt>Actualizado</dt><dd id="meta-updated">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Alertas recientes</h2>
+        <ul id="alerts-list" class="alerts">
+          <li class="alerts__empty muted">Sin alertas aún</li>
+        </ul>
+      </section>
+    </aside>
+
+    <section class="panel panel--full">
+      <div class="panel__head">
+        <h2>Capturas</h2>
+        <button id="refresh-snapshots" class="btn" type="button">Actualizar</button>
+      </div>
+      <div id="snapshots-grid" class="snapshots">
+        <p class="muted snapshots__empty">No hay capturas guardadas</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
