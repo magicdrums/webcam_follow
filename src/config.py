@@ -90,8 +90,8 @@ class VideoSourceConfig:
     stream_buffer_size: int
     stream_max_failures: int
     rtsp_transport: str
-    stream_ffmpeg_options: str = ""
     fallback_to_local: bool
+    stream_ffmpeg_options: str = ""
     tuya_device_id: str = ""
     tuya_stream_type: str = "rtsp"
 
