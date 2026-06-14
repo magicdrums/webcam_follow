@@ -1,6 +1,13 @@
 const $ = (id) => document.getElementById(id);
 
 let activeCameraId = null;
+let frameObjectUrl = null;
+let frameLoopActive = false;
+let frameTimer = null;
+let frameInFlight = false;
+
+/** Intervalo entre frames (~8 FPS en móvil, equilibrio fluidez/ancho de banda). */
+const FRAME_INTERVAL_MS = 120;
 
 function formatTime(iso) {
   if (!iso) return "—";
@@ -16,9 +23,66 @@ function apiUrl(path, cameraId) {
   return cid ? `${path}?camera_id=${encodeURIComponent(cid)}` : path;
 }
 
-function reloadVideoFeed() {
+function stopLiveFeed() {
+  frameLoopActive = false;
+  if (frameTimer) {
+    clearTimeout(frameTimer);
+    frameTimer = null;
+  }
+}
+
+function setFrameBlob(blob) {
   const feed = $("live-feed");
-  feed.src = `/video_feed?camera_id=${encodeURIComponent(activeCameraId || "")}&t=${Date.now()}`;
+  const url = URL.createObjectURL(blob);
+  feed.src = url;
+  if (frameObjectUrl) {
+    URL.revokeObjectURL(frameObjectUrl);
+  }
+  frameObjectUrl = url;
+}
+
+async function pollFrameOnce() {
+  if (!activeCameraId || frameInFlight) return;
+  frameInFlight = true;
+  try {
+    const res = await fetch(apiUrl("/api/frame") + `&_=${Date.now()}`, {
+      cache: "no-store",
+      headers: { Accept: "image/jpeg" },
+    });
+    if (res.ok) {
+      setFrameBlob(await res.blob());
+      $("video-placeholder").style.display = "none";
+      $("live-feed").style.display = "block";
+    }
+  } catch (err) {
+    console.warn("Frame error:", err);
+  } finally {
+    frameInFlight = false;
+  }
+}
+
+function scheduleFramePoll() {
+  if (!frameLoopActive) return;
+  const tick = async () => {
+    if (!frameLoopActive) return;
+    const t0 = performance.now();
+    await pollFrameOnce();
+    const elapsed = performance.now() - t0;
+    const delay = Math.max(40, FRAME_INTERVAL_MS - elapsed);
+    frameTimer = setTimeout(tick, delay);
+  };
+  tick();
+}
+
+function startLiveFeed() {
+  stopLiveFeed();
+  if (!activeCameraId) return;
+  frameLoopActive = true;
+  scheduleFramePoll();
+}
+
+function reloadVideoFeed() {
+  startLiveFeed();
 }
 
 async function loadCameras() {
@@ -83,11 +147,22 @@ function updateStatus(data) {
   });
 
   const placeholder = $("video-placeholder");
+  const feed = $("live-feed");
   if (connected) {
-    placeholder.style.display = "none";
-    $("live-feed").style.display = "block";
+    if (!frameLoopActive) {
+      startLiveFeed();
+    }
+    placeholder.style.display = feed.src ? "none" : "flex";
+    feed.style.display = feed.src ? "block" : "none";
   } else {
+    stopLiveFeed();
     placeholder.style.display = "flex";
+    feed.style.display = "none";
+    feed.removeAttribute("src");
+    if (frameObjectUrl) {
+      URL.revokeObjectURL(frameObjectUrl);
+      frameObjectUrl = null;
+    }
   }
 
   renderHeatmap(data);
@@ -183,6 +258,14 @@ async function loadSnapshots() {
   }
 }
 
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopLiveFeed();
+  } else if (activeCameraId) {
+    startLiveFeed();
+  }
+});
+
 $("camera-select").addEventListener("change", (e) => {
   switchCamera(e.target.value);
 });
@@ -199,7 +282,7 @@ $("btn-reset-heatmap").addEventListener("click", async () => {
 });
 
 loadCameras().then(() => {
-  reloadVideoFeed();
+  startLiveFeed();
   poll();
   loadSnapshots();
 });

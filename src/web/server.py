@@ -46,6 +46,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
 
     @app.get("/video_feed")
     def video_feed():
+        """MJPEG clásico (Chrome/Firefox en escritorio). Móviles usan /api/frame."""
         camera_id = _camera_id_from_request()
 
         def generate():
@@ -61,6 +62,24 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         return Response(
             generate(),
             mimetype="multipart/x-mixed-replace; boundary=frame",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        )
+
+    @app.get("/api/frame")
+    def api_frame():
+        """Frame JPEG único — compatible con Safari iOS y navegadores móviles."""
+        camera_id = _camera_id_from_request()
+        frame = manager.get_jpeg_frame(camera_id)
+        if not frame:
+            abort(404, description="Sin frame disponible")
+        return Response(
+            frame,
+            mimetype="image/jpeg",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
         )
 
     @app.get("/api/cameras")
