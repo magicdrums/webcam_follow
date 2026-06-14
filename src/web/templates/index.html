@@ -66,6 +66,19 @@
       </section>
 
       <section class="panel">
+        <div class="panel__head">
+          <h2>Mapa de calor</h2>
+          <button id="btn-reset-heatmap" class="btn btn--sm" type="button">Reiniciar</button>
+        </div>
+        <p class="muted form-hint">Zonas con más movimiento acumulado (rojo = más actividad).</p>
+        <img id="heatmap-thumb" class="heatmap-thumb hidden" alt="Mapa de calor">
+        <ul id="hot-zones-list" class="hot-zones">
+          <li class="muted">Sin datos aún</li>
+        </ul>
+        <div id="motion-prediction" class="motion-prediction muted">Predicción: —</div>
+      </section>
+
+      <section class="panel">
         <h2>Alertas recientes</h2>
         <ul id="alerts-list" class="alerts">
           <li class="alerts__empty muted">Sin alertas aún</li>

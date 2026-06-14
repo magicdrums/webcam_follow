@@ -460,6 +460,35 @@ body {
   text-overflow: ellipsis;
 }
 
+.heatmap-thumb {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+  image-rendering: pixelated;
+}
+
+.hot-zones {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.hot-zones li {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hot-zones li:last-child {
+  border-bottom: none;
+}
+
+.motion-prediction {
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;

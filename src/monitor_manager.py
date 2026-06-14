@@ -16,7 +16,7 @@ from src.admin.models import AlertHistoryEntry
 from src.admin.store import AdminStore
 from src.detector import DetectionEvent, EventType, VisionDetector
 from src.admin.notifications import StoreNotificationService
-from src.notifier import save_snapshot
+from src.motion_analytics import MotionAnalytics
 from src.platform import log_platform_info
 from src.video_source import open_video_source
 
@@ -54,6 +54,9 @@ class LiveStatus:
     stream_url: str = ""
     connected: bool = False
     last_update: str = ""
+    hot_zones: list[dict] = field(default_factory=list)
+    motion_prediction: dict = field(default_factory=dict)
+    heatmap_peak: float = 0.0
 
 
 @dataclass
@@ -90,6 +93,7 @@ class CameraWorker:
         self._stop = threading.Event()
         self._rule_cooldowns: dict[str, float] = {}
         self._settings_version = ""
+        self._motion_analytics = MotionAnalytics()
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -114,6 +118,21 @@ class CameraWorker:
     def get_status(self) -> LiveStatus:
         with self._lock:
             return replace(self._status)
+
+    def get_motion_analytics(self) -> MotionAnalytics:
+        return self._motion_analytics
+
+    def reset_motion_analytics(self) -> None:
+        self._motion_analytics.reset()
+
+    def get_heatmap_jpeg(self) -> bytes | None:
+        image = self._motion_analytics.render_heatmap_image()
+        if image is None:
+            return None
+        ok, encoded = cv2.imencode(
+            ".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 85]
+        )
+        return encoded.tobytes() if ok else None
 
     def get_alerts(self, limit: int = 50) -> list[AlertRecord]:
         with self._lock:
@@ -233,6 +252,7 @@ class CameraWorker:
         object_counts: dict[str, int],
         yolo_active: bool,
         fps: float,
+        motion_snapshot: dict | None = None,
     ) -> None:
         ok, encoded = cv2.imencode(
             ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self.JPEG_QUALITY]
@@ -255,6 +275,9 @@ class CameraWorker:
             stream_url=self._mask_stream_url(self.video_config.stream_url),
             connected=True,
             last_update=datetime.now().isoformat(timespec="seconds"),
+            hot_zones=(motion_snapshot or {}).get("hot_zones", []),
+            motion_prediction=(motion_snapshot or {}).get("prediction", {}),
+            heatmap_peak=(motion_snapshot or {}).get("peak_intensity", 0.0),
         )
         with self._lock:
             self._latest_jpeg = encoded.tobytes()
@@ -319,6 +342,7 @@ class CameraWorker:
 
                 detection = self.store.build_detection_config(self.app_config)
                 detector = self._sync_detector(detector, detection)
+                yolo_settings = self.store.get_yolo_settings()
 
                 now = time.monotonic()
                 frame_count, fps_timer, fps = self._update_fps(frame_count, fps_timer)
@@ -326,13 +350,52 @@ class CameraWorker:
                     self._status.fps = fps
 
                 if now - last_detection < detection.detection_interval_sec:
+                    display = frame
+                    snap_dict = self._motion_analytics.snapshot.to_dict()
+                    if yolo_settings.heatmap_enabled or yolo_settings.motion_prediction_enabled:
+                        self._motion_analytics.update(
+                            None,
+                            frame.shape,
+                            decay=yolo_settings.heatmap_decay,
+                            enable_prediction=False,
+                        )
+                        snap_dict = self._motion_analytics.snapshot.to_dict()
+                        display = self._motion_analytics.render_overlay(
+                            frame,
+                            opacity=yolo_settings.heatmap_opacity,
+                            show_heatmap=yolo_settings.heatmap_enabled,
+                            show_prediction=yolo_settings.motion_prediction_enabled,
+                        )
                     self._publish_frame(
-                        frame, last_motion, last_motion_area, last_counts, last_yolo_active, fps
+                        display,
+                        last_motion,
+                        last_motion_area,
+                        last_counts,
+                        last_yolo_active,
+                        fps,
+                        snap_dict,
                     )
                     continue
 
                 last_detection = now
-                events, annotated = detector.analyze(frame)
+                events, annotated, motion_mask = detector.analyze(frame)
+
+                yolo_settings = self.store.get_yolo_settings()
+                analytics_snap = self._motion_analytics.update(
+                    motion_mask,
+                    frame.shape,
+                    decay=yolo_settings.heatmap_decay,
+                    enable_prediction=yolo_settings.motion_prediction_enabled,
+                )
+                if yolo_settings.heatmap_enabled or yolo_settings.motion_prediction_enabled:
+                    annotated = self._motion_analytics.render_overlay(
+                        annotated,
+                        opacity=yolo_settings.heatmap_opacity,
+                        prediction=analytics_snap.prediction,
+                        show_heatmap=yolo_settings.heatmap_enabled,
+                        show_prediction=yolo_settings.motion_prediction_enabled,
+                    )
+
                 self._handle_events(events, annotated, notifications)
 
                 last_motion = any(e.event_type == EventType.MOTION for e in events)
@@ -352,6 +415,7 @@ class CameraWorker:
                     last_counts,
                     last_yolo_active,
                     fps,
+                    analytics_snap.to_dict(),
                 )
         finally:
             video.release()
@@ -459,6 +523,17 @@ class MonitorManager:
     def get_status(self, camera_id: str | None = None) -> LiveStatus | None:
         worker = self.get_worker(camera_id)
         return worker.get_status() if worker else None
+
+    def get_heatmap_jpeg(self, camera_id: str | None = None) -> bytes | None:
+        worker = self.get_worker(camera_id)
+        return worker.get_heatmap_jpeg() if worker else None
+
+    def reset_motion_analytics(self, camera_id: str | None = None) -> bool:
+        worker = self.get_worker(camera_id)
+        if not worker:
+            return False
+        worker.reset_motion_analytics()
+        return True
 
     def get_alerts(self, limit: int = 50, camera_id: str | None = None) -> list[AlertRecord]:
         if camera_id:

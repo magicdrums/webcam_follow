@@ -357,6 +357,10 @@ def _yolo_settings_from_app_config(config: AppConfig) -> YoloSettings:
         min_motion_area=det.min_motion_area,
         detection_interval_sec=det.detection_interval_sec,
         save_snapshots=det.save_snapshots,
+        heatmap_enabled=True,
+        heatmap_opacity=0.45,
+        heatmap_decay=0.96,
+        motion_prediction_enabled=True,
     )
 
 

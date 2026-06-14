@@ -89,6 +89,41 @@ function updateStatus(data) {
   } else {
     placeholder.style.display = "flex";
   }
+
+  renderHeatmap(data);
+}
+
+function renderHeatmap(data) {
+  const zones = data.hot_zones || [];
+  const list = $("hot-zones-list");
+  if (!zones.length) {
+    list.innerHTML = '<li class="muted">Sin actividad acumulada</li>';
+  } else {
+    list.innerHTML = zones
+      .map(
+        (z, i) =>
+          `<li><strong>#${i + 1}</strong> ${z.x_pct}%, ${z.y_pct}% · intensidad ${Math.round(z.intensity * 100)}%</li>`
+      )
+      .join("");
+  }
+
+  const pred = data.motion_prediction || {};
+  const predEl = $("motion-prediction");
+  if (pred.active) {
+    predEl.textContent = `Predicción: hacia ${pred.to_x}%, ${pred.to_y}% · ${pred.speed.toFixed(1)} %/s · ${pred.direction_deg}°`;
+    predEl.classList.remove("muted");
+  } else {
+    predEl.textContent = "Predicción: sin movimiento suficiente";
+    predEl.classList.add("muted");
+  }
+
+  const thumb = $("heatmap-thumb");
+  if ((data.heatmap_peak || 0) > 0.05) {
+    thumb.src = apiUrl("/api/motion/heatmap") + `&t=${Date.now()}`;
+    thumb.classList.remove("hidden");
+  } else {
+    thumb.classList.add("hidden");
+  }
 }
 
 function renderAlerts(alerts) {
@@ -153,6 +188,15 @@ $("camera-select").addEventListener("change", (e) => {
 });
 
 $("refresh-snapshots").addEventListener("click", loadSnapshots);
+
+$("btn-reset-heatmap").addEventListener("click", async () => {
+  try {
+    await fetch(apiUrl("/api/motion/heatmap/reset"), { method: "POST" });
+    poll();
+  } catch (err) {
+    console.warn("Heatmap reset:", err);
+  }
+});
 
 loadCameras().then(() => {
   reloadVideoFeed();

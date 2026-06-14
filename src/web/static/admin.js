@@ -640,6 +640,10 @@ async function loadYoloAdmin() {
   $("yolo-device").value = cfg.yolo_device || "auto";
   $("yolo-on-motion-only").checked = cfg.yolo_on_motion_only;
   $("yolo-save-snapshots").checked = cfg.save_snapshots !== false;
+  $("yolo-heatmap-enabled").checked = cfg.heatmap_enabled !== false;
+  $("yolo-prediction-enabled").checked = cfg.motion_prediction_enabled !== false;
+  $("yolo-heatmap-opacity").value = cfg.heatmap_opacity ?? 0.45;
+  $("yolo-heatmap-decay").value = cfg.heatmap_decay ?? 0.96;
   $("yolo-motion-threshold").value = cfg.motion_threshold;
   $("yolo-min-motion-area").value = cfg.min_motion_area;
   $("yolo-classes-mode").value = cfg.detect_classes_mode || "default";
@@ -686,6 +690,10 @@ $("yolo-config-form").addEventListener("submit", async (e) => {
     yolo_device: $("yolo-device").value,
     yolo_on_motion_only: $("yolo-on-motion-only").checked,
     save_snapshots: $("yolo-save-snapshots").checked,
+    heatmap_enabled: $("yolo-heatmap-enabled").checked,
+    heatmap_opacity: parseFloat($("yolo-heatmap-opacity").value),
+    heatmap_decay: parseFloat($("yolo-heatmap-decay").value),
+    motion_prediction_enabled: $("yolo-prediction-enabled").checked,
     motion_threshold: parseInt($("yolo-motion-threshold").value, 10),
     min_motion_area: parseInt($("yolo-min-motion-area").value, 10),
     detect_classes_mode: $("yolo-classes-mode").value,

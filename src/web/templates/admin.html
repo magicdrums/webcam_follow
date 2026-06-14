@@ -290,6 +290,31 @@
           </fieldset>
 
           <fieldset class="form__fieldset">
+            <legend>Mapa de calor y predicción</legend>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="yolo-heatmap-enabled" checked>
+              <span>Mostrar mapa de calor en vídeo</span>
+            </label>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="yolo-prediction-enabled" checked>
+              <span>Mostrar predicción de movimiento (flecha amarilla)</span>
+            </label>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Opacidad del mapa</span>
+                <input type="number" id="yolo-heatmap-opacity" min="0.05" max="0.95" step="0.05" value="0.45">
+              </label>
+              <label class="form__field">
+                <span>Decaimiento (0.8–0.999)</span>
+                <input type="number" id="yolo-heatmap-decay" min="0.8" max="0.999" step="0.01" value="0.96">
+              </label>
+            </div>
+            <p class="muted form-hint">
+              El mapa acumula movimiento MOG2; la predicción extrapola la trayectoria ~0.8 s adelante.
+            </p>
+          </fieldset>
+
+          <fieldset class="form__fieldset">
             <legend>Clases COCO a detectar</legend>
             <div class="form__actions form__actions--start">
               <span class="muted">Preset:</span>

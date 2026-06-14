@@ -133,6 +133,10 @@ class YoloSettings:
     min_motion_area: int = 5000
     detection_interval_sec: float = 0.5
     save_snapshots: bool = True
+    heatmap_enabled: bool = True
+    heatmap_opacity: float = 0.45
+    heatmap_decay: float = 0.96
+    motion_prediction_enabled: bool = True
     updated_at: str = field(default_factory=_now_iso)
 
     @classmethod
@@ -149,6 +153,12 @@ class YoloSettings:
             min_motion_area=int(data.get("min_motion_area", 5000)),
             detection_interval_sec=float(data.get("detection_interval_sec", 0.5)),
             save_snapshots=bool(data.get("save_snapshots", True)),
+            heatmap_enabled=bool(data.get("heatmap_enabled", True)),
+            heatmap_opacity=float(data.get("heatmap_opacity", 0.45)),
+            heatmap_decay=float(data.get("heatmap_decay", 0.96)),
+            motion_prediction_enabled=bool(
+                data.get("motion_prediction_enabled", True)
+            ),
             updated_at=data.get("updated_at", _now_iso()),
         )
 

@@ -123,6 +123,10 @@ def merge_yolo_updates(current: YoloSettings, payload: dict) -> YoloSettings:
         "min_motion_area",
         "detection_interval_sec",
         "save_snapshots",
+        "heatmap_enabled",
+        "heatmap_opacity",
+        "heatmap_decay",
+        "motion_prediction_enabled",
     }
     for key in allowed:
         if key in payload:

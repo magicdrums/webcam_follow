@@ -82,6 +82,21 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             return jsonify({"connected": False})
         return jsonify(asdict(status))
 
+    @app.get("/api/motion/heatmap")
+    def api_heatmap_image():
+        camera_id = _camera_id_from_request()
+        jpeg = manager.get_heatmap_jpeg(camera_id)
+        if not jpeg:
+            abort(404, description="Sin datos de mapa de calor")
+        return Response(jpeg, mimetype="image/jpeg")
+
+    @app.post("/api/motion/heatmap/reset")
+    def api_heatmap_reset():
+        camera_id = _camera_id_from_request()
+        if not manager.reset_motion_analytics(camera_id):
+            abort(404, description="Cámara no encontrada")
+        return jsonify({"ok": True})
+
     @app.get("/api/alerts")
     def api_alerts():
         camera_id = request.args.get("camera_id")
@@ -152,6 +167,10 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             abort(400, description="detection_interval_sec debe estar entre 0.1 y 60")
         if updated.detect_classes_mode not in {"default", "all", "custom"}:
             abort(400, description="detect_classes_mode inválido")
+        if updated.heatmap_opacity < 0.05 or updated.heatmap_opacity > 0.95:
+            abort(400, description="heatmap_opacity debe estar entre 0.05 y 0.95")
+        if updated.heatmap_decay < 0.8 or updated.heatmap_decay > 0.999:
+            abort(400, description="heatmap_decay debe estar entre 0.8 y 0.999")
         store.update_yolo_settings(updated)
         return jsonify(yolo_settings_to_public_dict(updated))
 

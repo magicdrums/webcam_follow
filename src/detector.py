@@ -146,11 +146,13 @@ class VisionDetector:
         small = cv2.resize(gray, (32, 32))
         return int(small.mean() * 1000 + small.std() * 10)
 
-    def analyze(self, frame: np.ndarray) -> tuple[list[DetectionEvent], np.ndarray]:
+    def analyze(
+        self, frame: np.ndarray
+    ) -> tuple[list[DetectionEvent], np.ndarray, np.ndarray | None]:
         events: list[DetectionEvent] = []
         annotated = frame.copy()
 
-        motion_detected, motion_area, _ = self._detect_motion(frame)
+        motion_detected, motion_area, motion_mask = self._detect_motion(frame)
 
         run_yolo = motion_detected or not self.config.yolo_on_motion_only
         if run_yolo:
@@ -244,4 +246,4 @@ class VisionDetector:
             2,
         )
 
-        return events, annotated
+        return events, annotated, motion_mask if motion_detected else None

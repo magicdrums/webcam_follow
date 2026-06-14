@@ -208,6 +208,14 @@ Con `WEB_ENABLED=true` (activo por defecto en contenedor) tienes un panel en el 
 - **YOLO solo con movimiento** y guardado de capturas
 - Cambios en caliente sin reiniciar (`data/yolo_settings.json`)
 
+#### Mapa de calor y predicción
+
+- Acumula movimiento MOG2 en una cuadrícula 48×27 (rojo = más actividad)
+- Overlay en el vídeo en vivo y miniatura en el panel lateral
+- **Predicción**: flecha amarilla con extrapolación ~0.8 s del centro de movimiento
+- Configurable en **YOLO / Detección** (opacidad, decaimiento, activar/desactivar)
+- Botón **Reiniciar** en el panel en vivo
+
 Al primer arranque se importa la cámara, regla y canales desde tu `.env`.
 
 ```env
