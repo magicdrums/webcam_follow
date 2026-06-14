@@ -17,6 +17,7 @@ from src.admin.store import AdminStore
 from src.detector import DetectionEvent, EventType, VisionDetector
 from src.admin.notifications import StoreNotificationService
 from src.motion_analytics import MotionAnalytics
+from src.notifier import save_snapshot
 from src.platform import log_platform_info
 from src.video_source import open_video_source
 
