@@ -13,12 +13,14 @@ from src.admin.models import (
     NotificationChannels,
     SnapshotSettings,
     TuyaConfig,
+    YoloSettings,
 )
+from src.admin.yolo_config import build_detection_config
 from src.admin.channels import channels_from_app_config
 from src.integrations.tuya.client import TuyaClient
 
 if TYPE_CHECKING:
-    from src.config import AppConfig
+    from src.config import AppConfig, DetectionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class AdminStore:
         self._channels_file = self.data_dir / "notification_channels.json"
         self._tuya_file = self.data_dir / "tuya_config.json"
         self._snapshots_file = self.data_dir / "snapshot_settings.json"
+        self._yolo_file = self.data_dir / "yolo_settings.json"
         self._lock = threading.Lock()
         self._tuya_client: TuyaClient | None = None
 
@@ -81,6 +84,11 @@ class AdminStore:
                 snap = _snapshot_settings_from_app_config(config)
                 self._save_object(self._snapshots_file, snap.to_dict())
                 logger.info("Configuración de capturas inicializada")
+
+            if not self._yolo_file.exists():
+                yolo = _yolo_settings_from_app_config(config)
+                self._save_object(self._yolo_file, yolo.to_dict())
+                logger.info("Configuración YOLO inicializada desde .env")
 
     def get_tuya_config(self) -> TuyaConfig:
         with self._lock:
@@ -279,6 +287,26 @@ class AdminStore:
             self._save_object(self._snapshots_file, updated.to_dict())
         return updated
 
+    def get_yolo_settings(self) -> YoloSettings:
+        with self._lock:
+            data = self._load_object(self._yolo_file)
+            if not data:
+                return YoloSettings()
+            return YoloSettings.from_dict(data)
+
+    def update_yolo_settings(self, settings: YoloSettings) -> YoloSettings:
+        from src.admin.models import _now_iso
+
+        data = settings.to_dict()
+        data["updated_at"] = _now_iso()
+        updated = YoloSettings.from_dict(data)
+        with self._lock:
+            self._save_object(self._yolo_file, updated.to_dict())
+        return updated
+
+    def build_detection_config(self, config: AppConfig) -> DetectionConfig:
+        return build_detection_config(config.detection, self.get_yolo_settings())
+
 
 def _tuya_from_app_config(config: AppConfig) -> TuyaConfig:
     import os
@@ -298,12 +326,37 @@ def _tuya_from_app_config(config: AppConfig) -> TuyaConfig:
 
 
 def _snapshot_settings_from_app_config(config: AppConfig) -> SnapshotSettings:
-    import os
-
     return SnapshotSettings(
         retention_days=_env_int("SNAPSHOT_RETENTION_DAYS", 30),
         max_per_camera=_env_int("SNAPSHOT_MAX_PER_CAMERA", 500),
         cleanup_interval_sec=_env_int("SNAPSHOT_CLEANUP_INTERVAL_SEC", 3600),
+    )
+
+
+def _yolo_settings_from_app_config(config: AppConfig) -> YoloSettings:
+    import os
+
+    det = config.detection
+    raw = os.getenv("DETECT_CLASSES", "").strip()
+    if raw.lower() in {"all", "*"}:
+        mode, custom = "all", ""
+    elif raw:
+        mode, custom = "custom", raw
+    else:
+        mode, custom = "default", ""
+
+    return YoloSettings(
+        yolo_confidence=det.yolo_confidence,
+        yolo_imgsz=det.yolo_imgsz,
+        yolo_on_motion_only=det.yolo_on_motion_only,
+        yolo_model=det.yolo_model,
+        yolo_device=det.yolo_device,
+        detect_classes_mode=mode,
+        detect_classes_custom=custom,
+        motion_threshold=det.motion_threshold,
+        min_motion_area=det.min_motion_area,
+        detection_interval_sec=det.detection_interval_sec,
+        save_snapshots=det.save_snapshots,
     )
 
 

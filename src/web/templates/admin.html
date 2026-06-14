@@ -25,6 +25,7 @@
       <button class="tabs__btn tabs__btn--active" data-tab="cameras" type="button">Cámaras</button>
       <button class="tabs__btn" data-tab="tuya" type="button">Tuya IoT</button>
       <button class="tabs__btn" data-tab="rules" type="button">Reglas de alerta</button>
+      <button class="tabs__btn" data-tab="yolo" type="button">YOLO / Detección</button>
       <button class="tabs__btn" data-tab="channels" type="button">Canales</button>
       <button class="tabs__btn" data-tab="snapshots" type="button">Capturas</button>
       <button class="tabs__btn" data-tab="history" type="button">Historial</button>
@@ -218,6 +219,102 @@
           <div class="form__actions">
             <button class="btn btn--primary" type="submit">Guardar</button>
             <button class="btn" type="button" id="rule-form-cancel">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- YOLO / Detección -->
+    <section id="tab-yolo" class="tab-panel">
+      <div class="panel">
+        <h2>YOLOv8 y detección</h2>
+        <p class="muted form-hint">
+          Ajustes en caliente para todas las cámaras. Persistidos en
+          <code>data/yolo_settings.json</code>; se aplican sin reiniciar.
+        </p>
+        <form id="yolo-config-form" class="form form--wide">
+          <fieldset class="form__fieldset">
+            <legend>YOLOv8</legend>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Confianza mínima</span>
+                <input type="number" id="yolo-confidence" min="0.05" max="1" step="0.05" value="0.45">
+              </label>
+              <label class="form__field">
+                <span>Tamaño inferencia (imgsz)</span>
+                <input type="number" id="yolo-imgsz" min="160" max="1280" step="32" value="640">
+              </label>
+              <label class="form__field">
+                <span>Intervalo análisis (seg)</span>
+                <input type="number" id="yolo-interval" min="0.1" max="60" step="0.1" value="0.5">
+              </label>
+              <label class="form__field">
+                <span>Modelo</span>
+                <select id="yolo-model">
+                  <option value="yolov8n.pt">YOLOv8 nano (rápido)</option>
+                  <option value="yolov8s.pt">YOLOv8 small</option>
+                  <option value="yolov8m.pt">YOLOv8 medium</option>
+                </select>
+              </label>
+              <label class="form__field">
+                <span>Dispositivo</span>
+                <select id="yolo-device">
+                  <option value="auto">Auto (GPU si hay)</option>
+                  <option value="cpu">CPU</option>
+                  <option value="cuda">CUDA (NVIDIA)</option>
+                </select>
+              </label>
+            </div>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="yolo-on-motion-only">
+              <span>YOLO solo cuando hay movimiento (MOG2)</span>
+            </label>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="yolo-save-snapshots">
+              <span>Guardar capturas en alertas</span>
+            </label>
+          </fieldset>
+
+          <fieldset class="form__fieldset">
+            <legend>Movimiento (OpenCV MOG2)</legend>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Umbral movimiento</span>
+                <input type="number" id="yolo-motion-threshold" min="1" max="255" value="25">
+              </label>
+              <label class="form__field">
+                <span>Área mínima (px²)</span>
+                <input type="number" id="yolo-min-motion-area" min="100" step="100" value="5000">
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form__fieldset">
+            <legend>Clases COCO a detectar</legend>
+            <div class="form__actions form__actions--start">
+              <span class="muted">Preset:</span>
+              <button class="btn btn--sm" type="button" data-yolo-preset="default">Vigilancia</button>
+              <button class="btn btn--sm" type="button" data-yolo-preset="people">Solo personas</button>
+              <button class="btn btn--sm" type="button" data-yolo-preset="people_vehicles">Personas + vehículos</button>
+              <button class="btn btn--sm" type="button" data-yolo-preset="all">Todas (80)</button>
+            </div>
+            <label class="form__field">
+              <span>Modo</span>
+              <select id="yolo-classes-mode">
+                <option value="default">Predeterminado del proyecto</option>
+                <option value="custom">Personalizado</option>
+                <option value="all">Todas las clases</option>
+              </select>
+            </label>
+            <div id="yolo-classes-custom-panel" class="yolo-classes-grid hidden"></div>
+            <label class="form__field">
+              <span>IDs personalizados (alternativa)</span>
+              <input type="text" id="yolo-classes-custom" placeholder="0,2,16,17">
+            </label>
+          </fieldset>
+
+          <div class="form__actions">
+            <button class="btn btn--primary" type="submit">Guardar detección</button>
           </div>
         </form>
       </div>

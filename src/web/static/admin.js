@@ -591,6 +591,115 @@ async function loadTuyaDevices() {
 
 $("btn-tuya-refresh").addEventListener("click", () => loadTuyaDevices());
 
+// --- YOLO / Detección ---
+let yoloCocoClasses = [];
+
+function toggleYoloClassesPanel() {
+  const isCustom = $("yolo-classes-mode").value === "custom";
+  $("yolo-classes-custom-panel").classList.toggle("hidden", !isCustom);
+}
+
+function selectedYoloClassIds() {
+  return Array.from(
+    document.querySelectorAll('input[name="yolo-class"]:checked')
+  ).map((cb) => parseInt(cb.value, 10));
+}
+
+function setYoloClassCheckboxes(ids) {
+  const idSet = new Set(ids.map((id) => String(id)));
+  document.querySelectorAll('input[name="yolo-class"]').forEach((cb) => {
+    cb.checked = idSet.has(cb.value);
+  });
+}
+
+function renderYoloClassGrid(classes) {
+  const panel = $("yolo-classes-custom-panel");
+  panel.innerHTML = classes
+    .map(
+      (c) => `
+    <label class="yolo-class-chip">
+      <input type="checkbox" name="yolo-class" value="${c.id}">
+      <span>${c.label} (${c.id})</span>
+    </label>`
+    )
+    .join("");
+}
+
+async function loadYoloAdmin() {
+  const [{ classes }, cfg] = await Promise.all([
+    api("GET", "/api/admin/yolo/classes"),
+    api("GET", "/api/admin/yolo/config"),
+  ]);
+  yoloCocoClasses = classes;
+  renderYoloClassGrid(classes);
+
+  $("yolo-confidence").value = cfg.yolo_confidence;
+  $("yolo-imgsz").value = cfg.yolo_imgsz;
+  $("yolo-interval").value = cfg.detection_interval_sec;
+  $("yolo-model").value = cfg.yolo_model || "yolov8n.pt";
+  $("yolo-device").value = cfg.yolo_device || "auto";
+  $("yolo-on-motion-only").checked = cfg.yolo_on_motion_only;
+  $("yolo-save-snapshots").checked = cfg.save_snapshots !== false;
+  $("yolo-motion-threshold").value = cfg.motion_threshold;
+  $("yolo-min-motion-area").value = cfg.min_motion_area;
+  $("yolo-classes-mode").value = cfg.detect_classes_mode || "default";
+  $("yolo-classes-custom").value = cfg.detect_classes_custom || "";
+  if (cfg.detect_class_ids) {
+    setYoloClassCheckboxes(cfg.detect_class_ids);
+  }
+  toggleYoloClassesPanel();
+}
+
+$("yolo-classes-mode").addEventListener("change", toggleYoloClassesPanel);
+
+document.querySelectorAll("[data-yolo-preset]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const key = btn.dataset.yoloPreset;
+    const presets = {
+      default: { mode: "default", ids: "" },
+      people: { mode: "custom", ids: "0" },
+      people_vehicles: { mode: "custom", ids: "0,1,2,3,5,7" },
+      all: { mode: "all", ids: "" },
+    };
+    const p = presets[key];
+    if (!p) return;
+    $("yolo-classes-mode").value = p.mode;
+    $("yolo-classes-custom").value = p.ids;
+    if (p.ids) {
+      setYoloClassCheckboxes(p.ids.split(",").map((x) => parseInt(x.trim(), 10)));
+    }
+    toggleYoloClassesPanel();
+  });
+});
+
+$("yolo-config-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  let customIds = $("yolo-classes-custom").value.trim();
+  if ($("yolo-classes-mode").value === "custom" && !customIds) {
+    customIds = selectedYoloClassIds().join(",");
+  }
+  const payload = {
+    yolo_confidence: parseFloat($("yolo-confidence").value),
+    yolo_imgsz: parseInt($("yolo-imgsz").value, 10),
+    detection_interval_sec: parseFloat($("yolo-interval").value),
+    yolo_model: $("yolo-model").value,
+    yolo_device: $("yolo-device").value,
+    yolo_on_motion_only: $("yolo-on-motion-only").checked,
+    save_snapshots: $("yolo-save-snapshots").checked,
+    motion_threshold: parseInt($("yolo-motion-threshold").value, 10),
+    min_motion_area: parseInt($("yolo-min-motion-area").value, 10),
+    detect_classes_mode: $("yolo-classes-mode").value,
+    detect_classes_custom: customIds,
+  };
+  try {
+    await api("PUT", "/api/admin/yolo/config", payload);
+    toast("Configuración YOLO guardada (aplicada en vivo)");
+    loadYoloAdmin();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
 // --- Capturas ---
 async function populateSnapshotCameraFilter(selected = "") {
   const cameras = await api("GET", "/api/admin/cameras");
@@ -712,6 +821,7 @@ loadRules();
 loadHistory();
 loadChannels();
 loadTuyaConfig();
+loadYoloAdmin();
 populateSnapshotCameraFilter();
 loadSnapshotConfig();
 loadSnapshotsAdmin();

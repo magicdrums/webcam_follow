@@ -9,6 +9,12 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 from src.admin.channels import channels_to_public_dict, merge_channel_updates
 from src.admin.tuya_config import merge_tuya_updates, tuya_to_public_dict
+from src.admin.yolo_config import (
+    COCO_CLASSES,
+    DETECT_PRESETS,
+    merge_yolo_updates,
+    yolo_settings_to_public_dict,
+)
 from src.integrations.tuya.client import TuyaClientError
 from src.admin.models import AlertRule, Camera, SnapshotSettings
 from src.admin.notifications import StoreNotificationService
@@ -123,6 +129,31 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         store.add_camera(camera)
         manager.reload()
         return jsonify(camera.to_dict()), 201
+
+    # --- Admin API: YOLO / detección ---
+    @app.get("/api/admin/yolo/config")
+    def admin_get_yolo_config():
+        return jsonify(yolo_settings_to_public_dict(store.get_yolo_settings()))
+
+    @app.get("/api/admin/yolo/classes")
+    def admin_yolo_classes():
+        return jsonify({"classes": COCO_CLASSES, "presets": DETECT_PRESETS})
+
+    @app.put("/api/admin/yolo/config")
+    def admin_update_yolo_config():
+        payload = request.get_json(silent=True) or {}
+        current = store.get_yolo_settings()
+        updated = merge_yolo_updates(current, payload)
+        if updated.yolo_confidence < 0.05 or updated.yolo_confidence > 1:
+            abort(400, description="yolo_confidence debe estar entre 0.05 y 1")
+        if updated.yolo_imgsz < 160 or updated.yolo_imgsz > 1280:
+            abort(400, description="yolo_imgsz debe estar entre 160 y 1280")
+        if updated.detection_interval_sec < 0.1 or updated.detection_interval_sec > 60:
+            abort(400, description="detection_interval_sec debe estar entre 0.1 y 60")
+        if updated.detect_classes_mode not in {"default", "all", "custom"}:
+            abort(400, description="detect_classes_mode inválido")
+        store.update_yolo_settings(updated)
+        return jsonify(yolo_settings_to_public_dict(updated))
 
     # --- Admin API: capturas ---
     snapshot_service = manager.snapshot_service

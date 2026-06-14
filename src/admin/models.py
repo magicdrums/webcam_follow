@@ -121,6 +121,42 @@ class NotificationChannels:
 
 
 @dataclass
+class YoloSettings:
+    yolo_confidence: float = 0.45
+    yolo_imgsz: int = 640
+    yolo_on_motion_only: bool = False
+    yolo_model: str = "yolov8n.pt"
+    yolo_device: str = "auto"
+    detect_classes_mode: str = "default"
+    detect_classes_custom: str = ""
+    motion_threshold: int = 25
+    min_motion_area: int = 5000
+    detection_interval_sec: float = 0.5
+    save_snapshots: bool = True
+    updated_at: str = field(default_factory=_now_iso)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> YoloSettings:
+        return cls(
+            yolo_confidence=float(data.get("yolo_confidence", 0.45)),
+            yolo_imgsz=int(data.get("yolo_imgsz", 640)),
+            yolo_on_motion_only=bool(data.get("yolo_on_motion_only", False)),
+            yolo_model=str(data.get("yolo_model", "yolov8n.pt")),
+            yolo_device=str(data.get("yolo_device", "auto")),
+            detect_classes_mode=str(data.get("detect_classes_mode", "default")),
+            detect_classes_custom=str(data.get("detect_classes_custom", "")),
+            motion_threshold=int(data.get("motion_threshold", 25)),
+            min_motion_area=int(data.get("min_motion_area", 5000)),
+            detection_interval_sec=float(data.get("detection_interval_sec", 0.5)),
+            save_snapshots=bool(data.get("save_snapshots", True)),
+            updated_at=data.get("updated_at", _now_iso()),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class SnapshotSettings:
     retention_days: int = 30
     max_per_camera: int = 500

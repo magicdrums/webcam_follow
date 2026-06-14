@@ -14,6 +14,7 @@ No se versionan en git: pueden contener tokens, contraseñas y datos de tus cám
 | `notification_channels.json` | SMTP, Telegram, Twilio/WhatsApp |
 | `tuya_config.json` | Access ID/Key, UID y región Tuya Cloud |
 | `snapshot_settings.json` | Retención de capturas (días, máximo por cámara) |
+| `yolo_settings.json` | YOLOv8, MOG2 y clases COCO detectadas |
 
 ## Ubicación
 

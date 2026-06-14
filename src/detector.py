@@ -77,6 +77,15 @@ class VisionDetector:
             )
         return YOLO(self.config.yolo_model)
 
+    def update_config(self, config: DetectionConfig) -> None:
+        model_changed = config.yolo_model != self.config.yolo_model
+        device_changed = config.yolo_device != self.config.yolo_device
+        self.config = config
+        if device_changed:
+            self._device = resolve_yolo_device(config.yolo_device)
+        if model_changed:
+            self._model = self._load_model()
+
     def _detect_motion(self, frame: np.ndarray) -> tuple[bool, int, np.ndarray]:
         fg_mask = self._bg_subtractor.apply(frame)
         _, thresh = cv2.threshold(

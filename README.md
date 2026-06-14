@@ -200,6 +200,14 @@ Con `WEB_ENABLED=true` (activo por defecto en contenedor) tienes un panel en el 
 - Explorador de archivos con miniatura, filtro por cámara y eliminación individual
 - Persistencia en `data/snapshot_settings.json`
 
+#### YOLO / Detección (`/admin` → YOLO / Detección)
+
+- Confianza, intervalo, modelo (nano/small/medium), CPU/CUDA
+- MOG2: umbral y área mínima de movimiento
+- Clases COCO: presets o selección personalizada
+- **YOLO solo con movimiento** y guardado de capturas
+- Cambios en caliente sin reiniciar (`data/yolo_settings.json`)
+
 Al primer arranque se importa la cámara, regla y canales desde tu `.env`.
 
 ```env

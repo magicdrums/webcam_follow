@@ -22,7 +22,7 @@ from src.video_source import open_video_source
 
 if TYPE_CHECKING:
     from src.admin.models import Camera
-    from src.config import AppConfig
+    from src.config import AppConfig, DetectionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,7 @@ class CameraWorker:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._rule_cooldowns: dict[str, float] = {}
+        self._settings_version = ""
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -151,7 +152,8 @@ class CameraWorker:
         primary = _pick_primary_event(events)
         snapshot_name = None
         snapshot_path = None
-        if self.app_config.detection.save_snapshots:
+        detection = self.store.build_detection_config(self.app_config)
+        if detection.save_snapshots:
             snapshot_path = save_snapshot(frame, self.snapshot_dir, primary)
             snapshot_name = snapshot_path.name
 
@@ -281,9 +283,21 @@ class CameraWorker:
                     break
                 time.sleep(5)
 
+    def _sync_detector(
+        self, detector: VisionDetector | None, detection: DetectionConfig
+    ) -> VisionDetector:
+        settings = self.store.get_yolo_settings()
+        if detector is None or settings.updated_at != self._settings_version:
+            if detector is None:
+                detector = VisionDetector(detection)
+            else:
+                detector.update_config(detection)
+            self._settings_version = settings.updated_at
+        return detector
+
     def _run_capture_loop(self) -> None:
         video = open_video_source(self.video_config, self.store)
-        detector = VisionDetector(self.app_config.detection)
+        detector: VisionDetector | None = None
         notifications = StoreNotificationService(self.store)
 
         with self._lock:
@@ -303,12 +317,15 @@ class CameraWorker:
                 if self._stop.is_set():
                     break
 
+                detection = self.store.build_detection_config(self.app_config)
+                detector = self._sync_detector(detector, detection)
+
                 now = time.monotonic()
                 frame_count, fps_timer, fps = self._update_fps(frame_count, fps_timer)
                 with self._lock:
                     self._status.fps = fps
 
-                if now - last_detection < self.app_config.detection.detection_interval_sec:
+                if now - last_detection < detection.detection_interval_sec:
                     self._publish_frame(
                         frame, last_motion, last_motion_area, last_counts, last_yolo_active, fps
                     )
@@ -325,7 +342,7 @@ class CameraWorker:
                 if events:
                     last_counts = dict(events[-1].object_counts)
                 last_yolo_active = (
-                    not self.app_config.detection.yolo_on_motion_only or last_motion
+                    not detection.yolo_on_motion_only or last_motion
                 )
 
                 self._publish_frame(
