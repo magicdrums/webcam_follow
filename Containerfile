@@ -19,6 +19,8 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
+        libegl1 \
+        libgles2-mesa \
         libglib2.0-0 \
         libgl1 \
         libgomp1 \
@@ -48,9 +50,9 @@ USER appuser
 # Descarga YOLOv8n en build (evita red en el primer arranque)
 RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
-# Modelo MediaPipe Hand Landmarker (Tasks API; mp.solutions eliminado en >=0.10.30)
-RUN mkdir -p /app/data/models \
-    && python -c "import urllib.request; urllib.request.urlretrieve('https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', '/app/data/models/hand_landmarker.task')"
+# Modelo MediaPipe Hand Landmarker (fuera de /app/data: el volumen lo sobrescribe)
+RUN mkdir -p /app/models \
+    && python -c "import urllib.request; urllib.request.urlretrieve('https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', '/app/models/hand_landmarker.task')"
 
 USER root
 

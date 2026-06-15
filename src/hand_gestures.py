@@ -86,6 +86,8 @@ def _model_candidates() -> list[Path]:
         paths.append(Path(env_path))
     paths.extend(
         [
+            repo_root / "models" / "hand_landmarker.task",
+            Path("/app/models/hand_landmarker.task"),
             repo_root / "data" / "models" / "hand_landmarker.task",
             Path("/app/data/models/hand_landmarker.task"),
         ]
@@ -111,10 +113,7 @@ def _download_model() -> Path | None:
         target = Path(env_path)
     else:
         target = (
-            Path(__file__).resolve().parent.parent
-            / "data"
-            / "models"
-            / "hand_landmarker.task"
+            Path(__file__).resolve().parent.parent / "models" / "hand_landmarker.task"
         )
 
     try:
@@ -228,21 +227,27 @@ class HandGestureDetector:
         max_num_hands: int,
         enabled: bool,
     ) -> None:
-        settings_changed = (
-            abs(min_detection_confidence - self._min_detection) > 1e-6
-            or abs(min_tracking_confidence - self._min_tracking) > 1e-6
-            or max(1, min(max_num_hands, 2)) != self._max_num_hands
-        )
-        self._min_detection = min_detection_confidence
-        self._min_tracking = min_tracking_confidence
-        self._max_num_hands = max(1, min(max_num_hands, 2))
+        try:
+            settings_changed = (
+                abs(min_detection_confidence - self._min_detection) > 1e-6
+                or abs(min_tracking_confidence - self._min_tracking) > 1e-6
+                or max(1, min(max_num_hands, 2)) != self._max_num_hands
+            )
+            self._min_detection = min_detection_confidence
+            self._min_tracking = min_tracking_confidence
+            self._max_num_hands = max(1, min(max_num_hands, 2))
 
-        if enabled and (not self._enabled or settings_changed):
+            if enabled and (not self._enabled or settings_changed):
+                self._close_landmarker()
+                if not self._ensure_landmarker():
+                    enabled = False
+            if not enabled:
+                self._close_landmarker()
+            self._enabled = enabled
+        except Exception:
+            logger.exception("Error configurando gestos de mano; se desactivan")
             self._close_landmarker()
-            self._ensure_landmarker()
-        if not enabled:
-            self._close_landmarker()
-        self._enabled = enabled
+            self._enabled = False
 
     def _ensure_landmarker(self) -> bool:
         if self._landmarker is not None:
