@@ -5,7 +5,7 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
-from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, abort, jsonify, render_template, request, send_file
 
 from src.admin.channels import channels_to_public_dict, merge_channel_updates
 from src.admin.tuya_config import merge_tuya_updates, tuya_to_public_dict
@@ -165,7 +165,16 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         target = directory / safe
         if not target.is_file():
             abort(404)
-        return send_from_directory(directory, safe)
+        mimetype = None
+        if safe.lower().endswith(".mp4"):
+            mimetype = "video/mp4"
+        elif safe.lower().endswith((".jpg", ".jpeg")):
+            mimetype = "image/jpeg"
+        elif safe.lower().endswith(".png"):
+            mimetype = "image/png"
+        elif safe.lower().endswith(".webp"):
+            mimetype = "image/webp"
+        return send_file(target, mimetype=mimetype, conditional=True, etag=True)
 
     # --- Admin API: cámaras ---
     @app.get("/api/admin/cameras")

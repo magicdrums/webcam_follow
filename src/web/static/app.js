@@ -395,9 +395,25 @@ function showMediaViewerAt(index) {
   download.href = item.url;
   download.download = item.filename || item.name || "captura";
 
-  content.innerHTML = isVideo
-    ? `<video class="media-viewer__video" src="${item.url}" controls autoplay playsinline></video>`
-    : `<img class="media-viewer__image" src="${item.url}" alt="${item.filename || item.name || "Captura"}">`;
+  if (isVideo) {
+    content.innerHTML = `
+      <video class="media-viewer__video" controls playsinline preload="metadata"></video>
+      <p id="media-viewer-error" class="media-viewer__error hidden"></p>`;
+    const video = content.querySelector("video");
+    const errEl = $("media-viewer-error");
+    video.addEventListener("error", () => {
+      if (errEl) {
+        errEl.textContent =
+          "No se pudo reproducir el vídeo en el navegador. Usa Descargar o VLC, o graba de nuevo tras actualizar la app.";
+        errEl.classList.remove("hidden");
+      }
+    });
+    video.src = item.url;
+    video.load();
+    void video.play().catch(() => {});
+  } else {
+    content.innerHTML = `<img class="media-viewer__image" src="${item.url}" alt="${item.filename || item.name || "Captura"}">`;
+  }
 
   $("media-viewer-prev").disabled = index <= 0;
   $("media-viewer-next").disabled = index >= currentSnapshotItems.length - 1;

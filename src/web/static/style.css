@@ -880,6 +880,16 @@ body.viewer-open {
   background: #000;
 }
 
+.media-viewer__error {
+  margin: 0.75rem 0 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: #ffb4b4;
+  background: rgba(255, 80, 80, 0.12);
+  border-radius: 6px;
+  text-align: center;
+}
+
 .media-viewer__nav {
   width: 2.5rem;
   height: 2.5rem;
