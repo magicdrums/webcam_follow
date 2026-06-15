@@ -705,6 +705,37 @@ class MonitorManager:
             if camera.id in self._workers
         ]
 
+    def _camera_connected(self, camera_id: str) -> bool:
+        worker = self._workers.get(camera_id)
+        if not worker:
+            return False
+        status = worker.get_status()
+        return bool(status and status.connected)
+
+    def default_camera_id(self) -> str | None:
+        """Cámara por defecto para comandos sin argumento (p. ej. /foto)."""
+        managed = self._managed_cameras()
+        if not managed:
+            return None
+
+        managed_ids = {camera.id for camera in managed}
+        active = self.get_active_camera_id()
+
+        if active and active in managed_ids and self._camera_connected(active):
+            return active
+
+        for camera in managed:
+            if self._camera_connected(camera.id):
+                self.set_active_camera(camera.id)
+                return camera.id
+
+        if active and active in managed_ids:
+            return active
+
+        default_id = managed[0].id
+        self.set_active_camera(default_id)
+        return default_id
+
     def list_cameras_summary(self) -> list[dict]:
         result = []
         for camera in self._managed_cameras():
@@ -797,18 +828,10 @@ class MonitorManager:
         managed = self._managed_cameras()
         if not managed:
             return None
-        if not token:
-            active = self.get_active_camera_id()
-            if active and active in self._workers:
-                return active
-            return managed[0].id
+        if not token or not token.strip():
+            return self.default_camera_id()
 
         needle = token.strip().lower()
-        if not needle:
-            active = self.get_active_camera_id()
-            if active and active in self._workers:
-                return active
-            return managed[0].id
 
         for camera in managed:
             if camera.name.lower() == needle:

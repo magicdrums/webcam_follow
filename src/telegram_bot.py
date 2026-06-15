@@ -241,9 +241,16 @@ class TelegramBotWorker(threading.Thread):
         return camera_id, worker.camera.name
 
     def _cmd_cameras(self, chat_id: str, client: TelegramClient) -> None:
+        rows = self._manager.list_cameras_summary()
+        default_id = self._manager.default_camera_id()
         lines = []
-        for row in self._manager.list_cameras_summary():
-            state = "activa" if row.get("active") else "—"
+        for row in rows:
+            markers = []
+            if row.get("active"):
+                markers.append("activa")
+            if row["id"] == default_id:
+                markers.append("predeterminada")
+            state = ", ".join(markers) if markers else "—"
             conn = "online" if row.get("connected") else "offline"
             lines.append(f"• {row['name']} ({conn}) [{state}]")
         client.send_message(
