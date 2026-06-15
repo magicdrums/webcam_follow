@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from src.admin.models import DEFAULT_SNAPSHOT_EVENT_TYPES
+from src.admin.models import YoloSettings
 from src.config import DEFAULT_DETECT_CLASSES, DetectionConfig, _parse_detect_classes
 
 # Dataset COCO (80 clases) — IDs estándar YOLOv8
