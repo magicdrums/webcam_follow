@@ -331,6 +331,62 @@ $("camera-select").addEventListener("change", (e) => {
 
 $("refresh-snapshots").addEventListener("click", loadSnapshots);
 
+function openSideMenu() {
+  $("side-menu").classList.add("is-open");
+  $("side-menu").setAttribute("aria-hidden", "false");
+  $("menu-backdrop").classList.remove("hidden");
+  $("menu-backdrop").setAttribute("aria-hidden", "false");
+  $("menu-toggle").setAttribute("aria-expanded", "true");
+  document.body.classList.add("menu-open");
+  loadSnapshots();
+  poll();
+}
+
+function closeSideMenu() {
+  $("side-menu").classList.remove("is-open");
+  $("side-menu").setAttribute("aria-hidden", "true");
+  $("menu-backdrop").classList.add("hidden");
+  $("menu-backdrop").setAttribute("aria-hidden", "true");
+  $("menu-toggle").setAttribute("aria-expanded", "false");
+  document.body.classList.remove("menu-open");
+}
+
+function switchMenuPanel(panelId) {
+  document.querySelectorAll(".side-menu__tab").forEach((tab) => {
+    const active = tab.dataset.menuPanel === panelId;
+    tab.classList.toggle("side-menu__tab--active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  $("menu-panel-snapshots").classList.toggle("hidden", panelId !== "snapshots");
+  $("menu-panel-alerts").classList.toggle("hidden", panelId !== "alerts");
+  if (panelId === "snapshots") {
+    loadSnapshots();
+  } else {
+    poll();
+  }
+}
+
+$("menu-toggle").addEventListener("click", () => {
+  if ($("side-menu").classList.contains("is-open")) {
+    closeSideMenu();
+  } else {
+    openSideMenu();
+  }
+});
+
+$("menu-close").addEventListener("click", closeSideMenu);
+$("menu-backdrop").addEventListener("click", closeSideMenu);
+
+document.querySelectorAll(".side-menu__tab").forEach((tab) => {
+  tab.addEventListener("click", () => switchMenuPanel(tab.dataset.menuPanel));
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("side-menu").classList.contains("is-open")) {
+    closeSideMenu();
+  }
+});
+
 $("btn-reset-heatmap").addEventListener("click", async () => {
   try {
     await fetch(apiUrl("/api/motion/heatmap/reset"), { method: "POST" });

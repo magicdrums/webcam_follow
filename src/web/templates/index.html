@@ -6,8 +6,42 @@
   <title>Webcam Follow</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-  <header class="header">
+<body class="app-view">
+  <button type="button" id="menu-toggle" class="fab fab--menu" aria-label="Capturas e historial" aria-expanded="false" aria-controls="side-menu">
+    <svg class="fab__icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
+  </button>
+
+  <a href="/admin" class="fab fab--settings" aria-label="Administración">
+    <svg class="fab__icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M11.08 2.25c-.92 0-1.7.66-1.85 1.57l-.18 1.07c-.02.12-.12.26-.3.35a7.5 7.5 0 00-.98.57c-.17.11-.33.12-.45.08l-1.02-.38a1.88 1.88 0 00-2.28.82l-.92 1.6a1.88 1.88 0 00.43 2.38l.84.69c.1.08.17.23.15.43a7.6 7.6 0 010 1.14c-.02.2.06.35.15.43l-.84.69a1.88 1.88 0 00-.43 2.38l.92 1.6a1.88 1.88 0 002.28.82l1.02-.38c.12-.04.28-.03.45.08.34.21.64.4.98.57.18.09.28.23.3.35l.18 1.07c.15.91.93 1.57 1.85 1.57h1.84c.92 0 1.7-.66 1.85-1.57l.18-1.07c.02-.12.12-.26.3-.35.34-.17.64-.36.98-.57.17-.11.33-.12.45-.08l1.02.38a1.88 1.88 0 002.28-.82l.92-1.6a1.88 1.88 0 00-.43-2.38l-.84-.69c-.09-.08-.17-.23-.15-.43a7.6 7.6 0 010-1.14c.02-.2-.06-.35-.15-.43l-.84-.69a1.88 1.88 0 00.43-2.38l-.92-1.6a1.88 1.88 0 00-2.28-.82l-1.02.38c-.12.04-.28.03-.45-.08a7.5 7.5 0 00-.98-.57c-.18-.09-.28-.23-.3-.35l-.18-1.07a1.88 1.88 0 00-1.85-1.57h-1.84zM12 15.75a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5z" clip-rule="evenodd"/></svg>
+  </a>
+
+  <div id="menu-backdrop" class="menu-backdrop hidden" aria-hidden="true"></div>
+
+  <aside id="side-menu" class="side-menu" aria-hidden="true">
+    <div class="side-menu__head">
+      <h2 class="side-menu__title">Capturas e historial</h2>
+      <button type="button" id="menu-close" class="btn btn--icon" aria-label="Cerrar menú">×</button>
+    </div>
+    <nav class="side-menu__tabs" role="tablist">
+      <button type="button" class="side-menu__tab side-menu__tab--active" data-menu-panel="snapshots" role="tab" aria-selected="true">Capturas</button>
+      <button type="button" class="side-menu__tab" data-menu-panel="alerts" role="tab" aria-selected="false">Alertas</button>
+    </nav>
+    <div id="menu-panel-snapshots" class="side-menu__panel" role="tabpanel">
+      <div class="side-menu__toolbar">
+        <button id="refresh-snapshots" class="btn btn--sm" type="button">Actualizar</button>
+      </div>
+      <div id="snapshots-grid" class="snapshots snapshots--menu">
+        <p class="muted snapshots__empty">No hay capturas guardadas</p>
+      </div>
+    </div>
+    <div id="menu-panel-alerts" class="side-menu__panel hidden" role="tabpanel">
+      <ul id="alerts-list" class="alerts">
+        <li class="alerts__empty muted">Sin alertas aún</li>
+      </ul>
+    </div>
+  </aside>
+
+  <header class="header header--app">
     <div class="header__brand">
       <span class="header__logo">◉</span>
       <div>
@@ -17,13 +51,12 @@
     </div>
     <div class="header__actions">
       <select id="camera-select" class="select" aria-label="Seleccionar cámara"></select>
-      <a href="/admin" class="btn btn--link">Administración</a>
       <span id="conn-badge" class="badge badge--offline">Desconectado</span>
       <span id="fps-badge" class="badge">0 FPS</span>
     </div>
   </header>
 
-  <main class="layout">
+  <main class="layout layout--app">
     <section class="panel panel--video">
       <div class="panel__head">
         <h2>Vista en vivo</h2>
@@ -77,24 +110,7 @@
         </ul>
         <div id="motion-prediction" class="motion-prediction muted">Predicción: —</div>
       </section>
-
-      <section class="panel">
-        <h2>Alertas recientes</h2>
-        <ul id="alerts-list" class="alerts">
-          <li class="alerts__empty muted">Sin alertas aún</li>
-        </ul>
-      </section>
     </aside>
-
-    <section class="panel panel--full">
-      <div class="panel__head">
-        <h2>Capturas</h2>
-        <button id="refresh-snapshots" class="btn" type="button">Actualizar</button>
-      </div>
-      <div id="snapshots-grid" class="snapshots">
-        <p class="muted snapshots__empty">No hay capturas guardadas</p>
-      </div>
-    </section>
   </main>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>
