@@ -134,7 +134,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         if date:
             limit = max(limit, 200)
         result = manager.snapshot_service.list_snapshots(
-            store.list_cameras(),
+            store.list_cameras(enabled_only=True),
             camera_id=camera_id,
             date=date,
             limit=limit,
@@ -150,7 +150,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         try:
             return jsonify(
                 manager.snapshot_service.list_media_dates(
-                    store.list_cameras(),
+                    store.list_cameras(enabled_only=True),
                     camera_id=camera_id,
                     month=month,
                 )
@@ -328,6 +328,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
     def admin_delete_camera(camera_id: str):
         if not store.delete_camera(camera_id):
             abort(404)
+        snapshot_service.delete_camera(camera_id)
         manager.reload()
         return jsonify({"ok": True})
 

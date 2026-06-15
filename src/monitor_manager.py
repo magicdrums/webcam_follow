@@ -697,11 +697,19 @@ class MonitorManager:
             return None
         return self._workers.get(cid)
 
+    def _managed_cameras(self) -> list[Camera]:
+        """Cámaras habilitadas con worker activo (misma lista que usa la web)."""
+        return [
+            camera
+            for camera in self.store.list_cameras(enabled_only=True)
+            if camera.id in self._workers
+        ]
+
     def list_cameras_summary(self) -> list[dict]:
         result = []
-        for camera in self.store.list_cameras():
-            worker = self._workers.get(camera.id)
-            status = worker.get_status() if worker else None
+        for camera in self._managed_cameras():
+            worker = self._workers[camera.id]
+            status = worker.get_status()
             result.append(
                 {
                     "id": camera.id,
@@ -786,16 +794,34 @@ class MonitorManager:
         self._telegram_bot.start()
 
     def resolve_camera_id(self, token: str | None) -> str | None:
+        managed = self._managed_cameras()
+        if not managed:
+            return None
         if not token:
-            return self.get_active_camera_id()
+            active = self.get_active_camera_id()
+            if active and active in self._workers:
+                return active
+            return managed[0].id
+
         needle = token.strip().lower()
         if not needle:
-            return self.get_active_camera_id()
-        for camera in self.store.list_cameras():
-            if camera.id.lower().startswith(needle):
-                return camera.id
+            active = self.get_active_camera_id()
+            if active and active in self._workers:
+                return active
+            return managed[0].id
+
+        for camera in managed:
             if camera.name.lower() == needle:
                 return camera.id
+
+        name_matches = [c for c in managed if needle in c.name.lower()]
+        if len(name_matches) == 1:
+            return name_matches[0].id
+
+        id_matches = [c for c in managed if c.id.lower().startswith(needle)]
+        if len(id_matches) == 1:
+            return id_matches[0].id
+
         return None
 
     def capture_photo(self, camera_id: str | None = None) -> Path | None:

@@ -84,6 +84,8 @@ def _collect_media_items(
     items: list[dict] = []
 
     for cam_id, directory in _camera_dirs(snapshot_root, camera_id):
+        if cam_id not in names:
+            continue
         if not directory.exists():
             continue
         for path in sorted(

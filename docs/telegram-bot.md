@@ -10,6 +10,8 @@ Con Telegram activado y el **bot interactivo** encendido, puedes pedir capturas 
 
 Solo responde al chat ID configurado (seguridad básica).
 
+**Importante:** un mismo token de bot solo puede hacer *long polling* en **una** instancia. No ejecutes la app dos veces (local + contenedor) con el mismo token. Si ves error 409, detén la otra copia o desactiva el bot interactivo en una de ellas.
+
 ## Comandos
 
 | Comando | Descripción |
@@ -24,7 +26,7 @@ Solo responde al chat ID configurado (seguridad básica).
 
 También funcionan sin `/`: `foto`, `video 15`, `movimiento`.
 
-**Cámara** opcional: nombre exacto o inicio del ID. Sin argumento usa la cámara activa en la web.
+**Cámara** opcional: nombre (exacto o parcial) o inicio del ID. Sin argumento usa la cámara activa en la web. Solo aparecen cámaras **activas** (habilitadas en Admin); las inactivas o eliminadas no se listan.
 
 ## Ejemplos
 

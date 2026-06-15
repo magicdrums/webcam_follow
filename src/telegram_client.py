@@ -12,6 +12,10 @@ TELEGRAM_CAPTION_LIMIT = 1024
 TELEGRAM_VIDEO_LIMIT_BYTES = 49 * 1024 * 1024
 
 
+class TelegramPollingConflict(RuntimeError):
+    """Otra instancia hace polling o hay un webhook activo con el mismo token."""
+
+
 class TelegramClient:
     def __init__(self, bot_token: str) -> None:
         self.bot_token = bot_token.strip()
@@ -21,13 +25,29 @@ class TelegramClient:
     def configured(self) -> bool:
         return bool(self.bot_token)
 
+    def _parse_error(self, response: requests.Response) -> str:
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                return str(payload.get("description") or payload)
+        except ValueError:
+            pass
+        return response.text[:200] or f"HTTP {response.status_code}"
+
     def api_get(self, method: str, **params: Any) -> dict:
         response = requests.get(
             f"{self._base}/{method}",
             params=params,
             timeout=35,
         )
-        response.raise_for_status()
+        if response.status_code == 409:
+            raise TelegramPollingConflict(self._parse_error(response))
+        if not response.ok:
+            raise requests.HTTPError(
+                f"Telegram {method} failed ({response.status_code}): "
+                f"{self._parse_error(response)}",
+                response=response,
+            )
         data = response.json()
         if not data.get("ok"):
             raise RuntimeError(data.get("description", "Telegram API error"))
@@ -35,6 +55,22 @@ class TelegramClient:
 
     def api_post(self, method: str, **kwargs: Any) -> requests.Response:
         return requests.post(f"{self._base}/{method}", timeout=60, **kwargs)
+
+    def delete_webhook(self, *, drop_pending_updates: bool = False) -> None:
+        self.api_get(
+            "deleteWebhook",
+            drop_pending_updates=drop_pending_updates,
+        )
+        logger.info("Webhook de Telegram eliminado (modo long polling)")
+
+    def ensure_polling_mode(self) -> None:
+        try:
+            self.delete_webhook()
+        except TelegramPollingConflict:
+            logger.warning(
+                "Conflicto al eliminar webhook; puede haber otra instancia del bot activa"
+            )
+            raise
 
     def get_updates(self, offset: int | None = None, timeout: int = 25) -> list[dict]:
         params: dict[str, Any] = {"timeout": timeout}

@@ -7,7 +7,7 @@ import time
 from typing import TYPE_CHECKING
 
 from src.admin.models import NotificationChannels
-from src.telegram_client import TelegramClient
+from src.telegram_client import TelegramClient, TelegramPollingConflict
 
 if TYPE_CHECKING:
     from src.admin.store import AdminStore
@@ -41,6 +41,7 @@ class TelegramBotWorker(threading.Thread):
         self._store = store
         self._stop = threading.Event()
         self._offset: int | None = None
+        self._polling_ready = False
 
     def stop(self) -> None:
         self._stop.set()
@@ -50,13 +51,45 @@ class TelegramBotWorker(threading.Thread):
         while not self._stop.is_set():
             channels = self._store.get_notification_channels()
             if not self._bot_active(channels):
+                self._polling_ready = False
                 if self._stop.wait(3):
                     break
                 continue
 
             client = TelegramClient(channels.telegram_bot_token)
+            if not self._polling_ready:
+                try:
+                    client.ensure_polling_mode()
+                    self._polling_ready = True
+                except TelegramPollingConflict:
+                    logger.error(
+                        "Telegram 409: el mismo token ya está en uso (otra instancia "
+                        "de la app, otro contenedor o webhook externo). "
+                        "Detén duplicados o desactiva el bot interactivo en uno solo."
+                    )
+                    if self._stop.wait(15):
+                        break
+                    continue
+                except Exception:
+                    logger.exception("No se pudo preparar polling de Telegram")
+                    if self._stop.wait(5):
+                        break
+                    continue
+
             try:
                 updates = client.get_updates(self._offset, timeout=20)
+            except TelegramPollingConflict:
+                logger.warning(
+                    "Telegram 409 en getUpdates; reintentando tras eliminar webhook"
+                )
+                self._polling_ready = False
+                try:
+                    client.delete_webhook()
+                except Exception:
+                    logger.debug("deleteWebhook ignorado tras 409", exc_info=True)
+                if self._stop.wait(5):
+                    break
+                continue
             except Exception:
                 logger.exception("Error leyendo updates de Telegram")
                 if self._stop.wait(3):
@@ -203,8 +236,9 @@ class TelegramBotWorker(threading.Thread):
         if not camera_id:
             return None, None
         worker = self._manager.get_worker(camera_id)
-        name = worker.camera.name if worker else camera_id
-        return camera_id, name
+        if not worker:
+            return None, None
+        return camera_id, worker.camera.name
 
     def _cmd_cameras(self, chat_id: str, client: TelegramClient) -> None:
         lines = []
