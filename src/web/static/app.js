@@ -280,6 +280,7 @@ const ALERT_EVENT_LABELS = {
   objeto_detectado: "Objeto detectado",
   cambio_objetos: "Cambio de objetos",
   cambio_escena: "Cambio de escena",
+  gesto_mano: "Gesto de mano",
 };
 
 const ALERT_FILTER_STORAGE_KEY = "webcam-follow-alert-filters";
@@ -288,6 +289,7 @@ const ALERT_FILTER_DEFAULTS = {
   objeto_detectado: false,
   cambio_objetos: false,
   cambio_escena: true,
+  gesto_mano: true,
   onlyWithSnapshot: false,
 };
 

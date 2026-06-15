@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.admin.models import NotificationChannels
-from src.config import AppConfig, EmailConfig, TelegramConfig, WhatsAppConfig
+from src.config import AppConfig, EmailConfig, TelegramConfig, WebhookConfig, WhatsAppConfig, _env_bool, _env_str
 
 SECRET_PLACEHOLDER = "__UNCHANGED__"
 MASK = "••••••••"
@@ -24,6 +24,9 @@ def channels_from_app_config(config: AppConfig) -> NotificationChannels:
         twilio_auth_token=config.whatsapp.auth_token,
         twilio_whatsapp_from=config.whatsapp.from_number,
         whatsapp_to=config.whatsapp.to_number,
+        webhook_enabled=_env_bool("WEBHOOK_ENABLED", False),
+        webhook_url=_env_str("WEBHOOK_URL", ""),
+        webhook_secret=_env_str("WEBHOOK_SECRET", ""),
     )
 
 
@@ -57,6 +60,14 @@ def channels_to_whatsapp_config(channels: NotificationChannels) -> WhatsAppConfi
     )
 
 
+def channels_to_webhook_config(channels: NotificationChannels) -> WebhookConfig:
+    return WebhookConfig(
+        enabled=channels.webhook_enabled,
+        url=channels.webhook_url,
+        secret=channels.webhook_secret,
+    )
+
+
 def mask_secret(value: str) -> str:
     if not value:
         return ""
@@ -73,6 +84,8 @@ def channels_to_public_dict(channels: NotificationChannels) -> dict:
     data["telegram_bot_token_set"] = bool(channels.telegram_bot_token)
     data["twilio_auth_token"] = MASK if channels.twilio_auth_token else ""
     data["twilio_auth_token_set"] = bool(channels.twilio_auth_token)
+    data["webhook_secret"] = MASK if channels.webhook_secret else ""
+    data["webhook_secret_set"] = bool(channels.webhook_secret)
     return data
 
 
@@ -83,7 +96,7 @@ def merge_channel_updates(
     for key, value in payload.items():
         if key not in data or key == "updated_at":
             continue
-        if key in {"smtp_password", "twilio_auth_token", "telegram_bot_token"}:
+        if key in {"smtp_password", "twilio_auth_token", "telegram_bot_token", "webhook_secret"}:
             text = str(value).strip()
             if not text or text == MASK or MASK in text:
                 continue

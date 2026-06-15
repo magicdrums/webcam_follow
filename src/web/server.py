@@ -352,8 +352,10 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             notify_email=bool(payload.get("notify_email", False)),
             notify_telegram=bool(payload.get("notify_telegram", False)),
             notify_whatsapp=bool(payload.get("notify_whatsapp", False)),
+            notify_webhook=bool(payload.get("notify_webhook", False)),
             cooldown_sec=int(payload.get("cooldown_sec", 60)),
             min_persons=int(payload.get("min_persons", 0)),
+            gesture_types=list(payload.get("gesture_types", [])),
         )
         store.add_alert_rule(rule)
         return jsonify(rule.to_dict()), 201
@@ -362,8 +364,8 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
     def admin_update_rule(rule_id: str):
         payload = request.get_json(silent=True) or {}
         allowed = {
-            "name", "enabled", "camera_ids", "event_types",
-            "notify_email", "notify_telegram", "notify_whatsapp",
+            "name", "enabled", "camera_ids", "event_types", "gesture_types",
+            "notify_email", "notify_telegram", "notify_whatsapp", "notify_webhook",
             "cooldown_sec", "min_persons",
         }
         updates = {key: payload[key] for key in allowed if key in payload}
@@ -415,7 +417,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
     def admin_test_channel():
         payload = request.get_json(silent=True) or {}
         channel = (payload.get("channel") or "").strip().lower()
-        if channel not in {"email", "telegram", "whatsapp"}:
+        if channel not in {"email", "telegram", "whatsapp", "webhook"}:
             abort(400, description="Canal inválido")
         try:
             StoreNotificationService(store).test_channel(channel)

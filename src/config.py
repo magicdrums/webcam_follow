@@ -117,6 +117,17 @@ class DetectionConfig:
     yolo_on_motion_only: bool
     detect_classes: list[int] | None
     platform_label: str
+    hand_gesture_enabled: bool = False
+    hand_gesture_min_confidence: float = 0.75
+    hand_gesture_cooldown_sec: float = 2.0
+    hand_gesture_on_motion_only: bool = True
+    hand_gesture_types: tuple[str, ...] = (
+        "mano_abierta",
+        "punio",
+        "pulgar_arriba",
+        "saludo",
+    )
+    hand_max_num_hands: int = 2
 
 
 @dataclass(frozen=True)
@@ -144,6 +155,13 @@ class WhatsAppConfig:
     auth_token: str
     from_number: str
     to_number: str
+
+
+@dataclass(frozen=True)
+class WebhookConfig:
+    enabled: bool
+    url: str
+    secret: str
 
 
 @dataclass(frozen=True)
@@ -247,6 +265,11 @@ def load_config() -> AppConfig:
             ),
             detect_classes=_parse_detect_classes(detect_raw),
             platform_label=profile.label,
+            hand_gesture_enabled=_env_bool("HAND_GESTURE_ENABLED", False),
+            hand_gesture_min_confidence=_env_float("HAND_GESTURE_MIN_CONFIDENCE", 0.75),
+            hand_gesture_cooldown_sec=_env_float("HAND_GESTURE_COOLDOWN_SEC", 2.0),
+            hand_gesture_on_motion_only=_env_bool("HAND_GESTURE_ON_MOTION_ONLY", True),
+            hand_max_num_hands=_env_int("HAND_MAX_NUM_HANDS", 2),
         ),
         email=EmailConfig(
             enabled=_env_bool("EMAIL_ENABLED", False),

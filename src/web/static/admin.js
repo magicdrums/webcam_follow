@@ -5,6 +5,16 @@ const EVENT_LABELS = {
   objeto_detectado: "Objeto",
   cambio_objetos: "Cambio objetos",
   cambio_escena: "Cambio escena",
+  gesto_mano: "Gesto de mano",
+};
+
+const GESTURE_LABELS = {
+  mano_abierta: "Mano abierta",
+  punio: "Puño",
+  pulgar_arriba: "Pulgar arriba",
+  pulgar_abajo: "Pulgar abajo",
+  paz: "Paz / victoria",
+  saludo: "Saludo",
 };
 
 function toast(msg, isError = false) {
@@ -250,12 +260,26 @@ function showRuleForm(rule = null) {
   $("rule-email").checked = rule?.notify_email ?? false;
   $("rule-telegram").checked = rule?.notify_telegram ?? false;
   $("rule-whatsapp").checked = rule?.notify_whatsapp ?? false;
+  $("rule-webhook").checked = rule?.notify_webhook ?? false;
   $("rule-enabled").checked = rule?.enabled !== false;
   document.querySelectorAll('input[name="event"]').forEach((cb) => {
     cb.checked = rule ? rule.event_types.includes(cb.value) : cb.checked;
   });
+  document.querySelectorAll('input[name="gesture"]').forEach((cb) => {
+    cb.checked = rule ? (rule.gesture_types || []).includes(cb.value) : false;
+  });
+  toggleRuleGesturePanel();
   populateRuleCameras(rule?.camera_ids || []);
 }
+
+function toggleRuleGesturePanel() {
+  const enabled = document.querySelector('input[name="event"][value="gesto_mano"]')?.checked;
+  $("rule-gesture-types-fieldset").classList.toggle("hidden", !enabled);
+}
+
+document.querySelectorAll('input[name="event"]').forEach((cb) => {
+  cb.addEventListener("change", toggleRuleGesturePanel);
+});
 
 function hideRuleForm() {
   $("rule-form-panel").classList.add("hidden");
@@ -290,6 +314,7 @@ async function loadRules() {
               r.notify_email && "Email",
               r.notify_telegram && "Telegram",
               r.notify_whatsapp && "WhatsApp",
+              r.notify_webhook && "Webhook",
             ]
               .filter(Boolean)
               .join(", ") || "—";
@@ -343,11 +368,15 @@ $("rule-form").addEventListener("submit", async (e) => {
     event_types: Array.from(document.querySelectorAll('input[name="event"]:checked')).map(
       (cb) => cb.value
     ),
+    gesture_types: Array.from(document.querySelectorAll('input[name="gesture"]:checked')).map(
+      (cb) => cb.value
+    ),
     min_persons: parseInt($("rule-min-persons").value, 10),
     cooldown_sec: parseInt($("rule-cooldown").value, 10),
     notify_email: $("rule-email").checked,
     notify_telegram: $("rule-telegram").checked,
     notify_whatsapp: $("rule-whatsapp").checked,
+    notify_webhook: $("rule-webhook").checked,
     enabled: $("rule-enabled").checked,
   };
   try {
@@ -463,6 +492,13 @@ async function loadChannels() {
     : "Auth token";
   $("ch-twilio-from").value = ch.twilio_whatsapp_from || "";
   $("ch-whatsapp-to").value = ch.whatsapp_to || "";
+
+  $("ch-webhook-enabled").checked = ch.webhook_enabled;
+  $("ch-webhook-url").value = ch.webhook_url || "";
+  $("ch-webhook-secret").value = "";
+  $("ch-webhook-secret").placeholder = ch.webhook_secret_set
+    ? "Configurado — dejar vacío para mantener"
+    : "Bearer token (opcional)";
 }
 
 $("channels-form").addEventListener("submit", async (e) => {
@@ -480,6 +516,8 @@ $("channels-form").addEventListener("submit", async (e) => {
     twilio_account_sid: $("ch-twilio-sid").value.trim(),
     twilio_whatsapp_from: $("ch-twilio-from").value.trim(),
     whatsapp_to: $("ch-whatsapp-to").value.trim(),
+    webhook_enabled: $("ch-webhook-enabled").checked,
+    webhook_url: $("ch-webhook-url").value.trim(),
   };
   const smtpPass = $("ch-smtp-password").value;
   if (smtpPass) payload.smtp_password = smtpPass;
@@ -487,6 +525,8 @@ $("channels-form").addEventListener("submit", async (e) => {
   if (tgToken) payload.telegram_bot_token = tgToken;
   const twToken = $("ch-twilio-token").value;
   if (twToken) payload.twilio_auth_token = twToken;
+  const whSecret = $("ch-webhook-secret").value;
+  if (whSecret) payload.webhook_secret = whSecret;
 
   try {
     await api("PUT", "/api/admin/channels", payload);
@@ -659,6 +699,19 @@ function selectedSnapshotEventTypes() {
   );
 }
 
+function selectedHandGestureTypes() {
+  return Array.from(document.querySelectorAll('input[name="hand-gesture"]:checked')).map(
+    (el) => el.value
+  );
+}
+
+function setHandGestureCheckboxes(types) {
+  const allowed = new Set(types || []);
+  document.querySelectorAll('input[name="hand-gesture"]').forEach((el) => {
+    el.checked = allowed.has(el.value);
+  });
+}
+
 async function loadYoloAdmin() {
   const [{ classes }, cfg] = await Promise.all([
     api("GET", "/api/admin/yolo/classes"),
@@ -686,6 +739,12 @@ async function loadYoloAdmin() {
   $("yolo-motion-recording").checked = cfg.motion_recording_enabled === true;
   $("yolo-motion-recording-duration").value = cfg.motion_recording_duration_sec ?? 30;
   $("yolo-motion-recording-cooldown").value = cfg.motion_recording_cooldown_sec ?? 120;
+  $("yolo-hand-gesture-enabled").checked = cfg.hand_gesture_enabled === true;
+  $("yolo-hand-gesture-motion-only").checked = cfg.hand_gesture_on_motion_only !== false;
+  $("yolo-hand-gesture-confidence").value = cfg.hand_gesture_min_confidence ?? 0.75;
+  $("yolo-hand-gesture-cooldown").value = cfg.hand_gesture_cooldown_sec ?? 2;
+  $("yolo-hand-max-hands").value = cfg.hand_max_num_hands ?? 2;
+  setHandGestureCheckboxes(cfg.hand_gesture_types);
   $("yolo-classes-mode").value = cfg.detect_classes_mode || "default";
   $("yolo-classes-custom").value = cfg.detect_classes_custom || "";
   if (cfg.detect_class_ids) {
@@ -722,6 +781,10 @@ $("yolo-config-form").addEventListener("submit", async (e) => {
     toast("Selecciona al menos un evento para guardar capturas", true);
     return;
   }
+  if ($("yolo-hand-gesture-enabled").checked && !selectedHandGestureTypes().length) {
+    toast("Selecciona al menos un gesto de mano", true);
+    return;
+  }
   let customIds = $("yolo-classes-custom").value.trim();
   if ($("yolo-classes-mode").value === "custom" && !customIds) {
     customIds = selectedYoloClassIds().join(",");
@@ -750,6 +813,12 @@ $("yolo-config-form").addEventListener("submit", async (e) => {
     motion_recording_cooldown_sec: parseFloat(
       $("yolo-motion-recording-cooldown").value
     ),
+    hand_gesture_enabled: $("yolo-hand-gesture-enabled").checked,
+    hand_gesture_on_motion_only: $("yolo-hand-gesture-motion-only").checked,
+    hand_gesture_min_confidence: parseFloat($("yolo-hand-gesture-confidence").value),
+    hand_gesture_cooldown_sec: parseFloat($("yolo-hand-gesture-cooldown").value),
+    hand_max_num_hands: parseInt($("yolo-hand-max-hands").value, 10),
+    hand_gesture_types: selectedHandGestureTypes(),
     detect_classes_mode: $("yolo-classes-mode").value,
     detect_classes_custom: customIds,
   };

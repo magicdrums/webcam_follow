@@ -202,6 +202,16 @@
             <label><input type="checkbox" name="event" value="objeto_detectado" checked> Objeto detectado</label>
             <label><input type="checkbox" name="event" value="cambio_objetos" checked> Cambio de objetos</label>
             <label><input type="checkbox" name="event" value="cambio_escena"> Cambio de escena</label>
+            <label><input type="checkbox" name="event" value="gesto_mano"> Gesto de mano</label>
+          </fieldset>
+          <fieldset id="rule-gesture-types-fieldset" class="form__fieldset hidden">
+            <legend>Gestos (vacío = todos)</legend>
+            <label><input type="checkbox" name="gesture" value="mano_abierta"> Mano abierta</label>
+            <label><input type="checkbox" name="gesture" value="punio"> Puño</label>
+            <label><input type="checkbox" name="gesture" value="pulgar_arriba"> Pulgar arriba</label>
+            <label><input type="checkbox" name="gesture" value="pulgar_abajo"> Pulgar abajo</label>
+            <label><input type="checkbox" name="gesture" value="paz"> Paz / victoria</label>
+            <label><input type="checkbox" name="gesture" value="saludo"> Saludo (movimiento)</label>
           </fieldset>
           <label class="form__field">
             <span>Mín. personas (0 = cualquiera)</span>
@@ -216,6 +226,7 @@
             <label><input type="checkbox" id="rule-email"> Email</label>
             <label><input type="checkbox" id="rule-telegram"> Telegram</label>
             <label><input type="checkbox" id="rule-whatsapp"> WhatsApp</label>
+            <label><input type="checkbox" id="rule-webhook"> Webhook (Google Home / HA)</label>
           </fieldset>
           <label class="form__field form__field--check">
             <input type="checkbox" id="rule-enabled" checked>
@@ -300,6 +311,10 @@
                 <input type="checkbox" name="snapshot-event" value="cambio_escena">
                 <span>Cambio de escena</span>
               </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="snapshot-event" value="gesto_mano">
+                <span>Gesto de mano</span>
+              </label>
             </div>
             <div class="form__grid">
               <label class="form__field">
@@ -366,6 +381,62 @@
             <p class="muted form-hint">
               El mapa acumula movimiento MOG2; la predicción extrapola la trayectoria ~0.8 s adelante.
             </p>
+          </fieldset>
+
+          <fieldset class="form__fieldset">
+            <legend>Gestos de mano (MediaPipe)</legend>
+            <p class="muted form-hint">
+              Detecta gestos para automatizaciones (Google Home vía Home Assistant webhook).
+              Requiere <code>mediapipe</code> instalado y buena visibilidad de las manos.
+            </p>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="yolo-hand-gesture-enabled">
+              <span>Activar detección de gestos de mano</span>
+            </label>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="yolo-hand-gesture-motion-only" checked>
+              <span>Solo analizar gestos cuando hay movimiento</span>
+            </label>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Confianza mínima</span>
+                <input type="number" id="yolo-hand-gesture-confidence" min="0.5" max="1" step="0.05" value="0.75">
+              </label>
+              <label class="form__field">
+                <span>Cooldown entre gestos (s)</span>
+                <input type="number" id="yolo-hand-gesture-cooldown" min="0.5" max="60" step="0.5" value="2">
+              </label>
+              <label class="form__field">
+                <span>Máx. manos</span>
+                <input type="number" id="yolo-hand-max-hands" min="1" max="2" step="1" value="2">
+              </label>
+            </div>
+            <div id="hand-gesture-types" class="snapshot-triggers">
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="hand-gesture" value="mano_abierta" checked>
+                <span>Mano abierta</span>
+              </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="hand-gesture" value="punio">
+                <span>Puño</span>
+              </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="hand-gesture" value="pulgar_arriba" checked>
+                <span>Pulgar arriba</span>
+              </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="hand-gesture" value="pulgar_abajo">
+                <span>Pulgar abajo</span>
+              </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="hand-gesture" value="paz">
+                <span>Paz / victoria</span>
+              </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="hand-gesture" value="saludo" checked>
+                <span>Saludo (movimiento)</span>
+              </label>
+            </div>
           </fieldset>
 
           <fieldset class="form__fieldset">
@@ -486,6 +557,30 @@
               </label>
             </div>
             <button class="btn btn--sm" type="button" data-test-channel="whatsapp">Probar WhatsApp</button>
+          </fieldset>
+
+          <fieldset class="form__fieldset">
+            <legend>Webhook (Home Assistant / Google Home)</legend>
+            <p class="muted form-hint">
+              Envía JSON POST a tu automatizador. En Home Assistant crea un
+              <a href="https://www.home-assistant.io/integrations/webhook/" target="_blank" rel="noopener">Webhook</a>
+              y usa la URL en las reglas de alerta.
+            </p>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="ch-webhook-enabled">
+              <span>Activar webhook</span>
+            </label>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>URL del webhook</span>
+                <input type="url" id="ch-webhook-url" placeholder="https://homeassistant.local:8123/api/webhook/...">
+              </label>
+              <label class="form__field">
+                <span>Token / Bearer (opcional)</span>
+                <input type="password" id="ch-webhook-secret" placeholder="Dejar vacío para no cambiar" autocomplete="off">
+              </label>
+            </div>
+            <button class="btn btn--sm" type="button" data-test-channel="webhook">Probar webhook</button>
           </fieldset>
 
           <div class="form__actions">

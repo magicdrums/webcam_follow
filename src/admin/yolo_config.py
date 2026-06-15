@@ -103,6 +103,12 @@ def build_detection_config(
         yolo_imgsz=settings.yolo_imgsz,
         yolo_on_motion_only=settings.yolo_on_motion_only,
         detect_classes=resolve_detect_classes(settings),
+        hand_gesture_enabled=settings.hand_gesture_enabled,
+        hand_gesture_min_confidence=settings.hand_gesture_min_confidence,
+        hand_gesture_cooldown_sec=settings.hand_gesture_cooldown_sec,
+        hand_gesture_on_motion_only=settings.hand_gesture_on_motion_only,
+        hand_gesture_types=tuple(settings.hand_gesture_types),
+        hand_max_num_hands=settings.hand_max_num_hands,
     )
 
 
@@ -136,6 +142,12 @@ def merge_yolo_updates(current: YoloSettings, payload: dict) -> YoloSettings:
         "heatmap_opacity",
         "heatmap_decay",
         "motion_prediction_enabled",
+        "hand_gesture_enabled",
+        "hand_gesture_min_confidence",
+        "hand_gesture_cooldown_sec",
+        "hand_gesture_on_motion_only",
+        "hand_gesture_types",
+        "hand_max_num_hands",
     }
     for key in allowed:
         if key in payload:

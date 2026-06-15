@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PRIORITY = {
+    EventType.HAND_GESTURE: 6,
     EventType.OBJECT_CHANGE: 5,
     EventType.SCENE_CHANGE: 4,
     EventType.OBJECT: 3,
@@ -222,7 +223,26 @@ class CameraWorker:
         if not events:
             return
 
-        primary = _pick_primary_event(events)
+        gesture_events = [
+            event for event in events if event.event_type == EventType.HAND_GESTURE
+        ]
+        other_events = [
+            event for event in events if event.event_type != EventType.HAND_GESTURE
+        ]
+
+        for event in gesture_events:
+            self._dispatch_event(event, frame, notifications)
+
+        if other_events:
+            primary = _pick_primary_event(other_events)
+            self._dispatch_event(primary, frame, notifications)
+
+    def _dispatch_event(
+        self,
+        primary: DetectionEvent,
+        frame,
+        notifications: StoreNotificationService,
+    ) -> None:
         snapshot_name = None
         snapshot_path = None
         detection = self.store.build_detection_config(self.app_config)
@@ -231,6 +251,7 @@ class CameraWorker:
             self.camera.id,
             primary.event_type.value,
             primary.person_count,
+            gesture=primary.gesture,
         )
         pending_rules = [
             rule
@@ -240,7 +261,7 @@ class CameraWorker:
 
         if detection.save_snapshots:
             snapshot_event = _pick_snapshot_event(
-                events,
+                [primary],
                 detection.snapshot_event_types,
                 detection.snapshot_min_persons,
             )
@@ -271,9 +292,12 @@ class CameraWorker:
                 notifications.notify(
                     primary,
                     snapshot_path,
+                    camera_id=self.camera.id,
+                    camera_name=self.camera.name,
                     use_email=rule.notify_email,
                     use_telegram=rule.notify_telegram,
                     use_whatsapp=rule.notify_whatsapp,
+                    use_webhook=rule.notify_webhook,
                 )
                 self._rule_cooldowns[rule.id] = time.monotonic()
                 notified = True

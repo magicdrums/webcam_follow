@@ -225,13 +225,17 @@ class AdminStore:
         return True
 
     def matching_rules(
-        self, camera_id: str, event_type: str, person_count: int
+        self,
+        camera_id: str,
+        event_type: str,
+        person_count: int,
+        gesture: str | None = None,
     ) -> list[AlertRule]:
         return [
             rule
             for rule in self.list_alert_rules()
             if rule.matches_camera(camera_id)
-            and rule.matches_event(event_type, person_count)
+            and rule.matches_event(event_type, person_count, gesture=gesture)
         ]
 
     def add_history(self, entry: AlertHistoryEntry) -> None:

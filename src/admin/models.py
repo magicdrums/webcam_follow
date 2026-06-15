@@ -21,6 +21,7 @@ ALL_SNAPSHOT_EVENT_TYPES = [
     "objeto_detectado",
     "cambio_objetos",
     "cambio_escena",
+    "gesto_mano",
 ]
 
 
@@ -122,6 +123,9 @@ class NotificationChannels:
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""
     whatsapp_to: str = ""
+    webhook_enabled: bool = False
+    webhook_url: str = ""
+    webhook_secret: str = ""
     updated_at: str = field(default_factory=_now_iso)
 
     @classmethod
@@ -142,6 +146,9 @@ class NotificationChannels:
             twilio_auth_token=data.get("twilio_auth_token", ""),
             twilio_whatsapp_from=data.get("twilio_whatsapp_from", ""),
             whatsapp_to=data.get("whatsapp_to", ""),
+            webhook_enabled=bool(data.get("webhook_enabled", False)),
+            webhook_url=data.get("webhook_url", ""),
+            webhook_secret=data.get("webhook_secret", ""),
             updated_at=data.get("updated_at", _now_iso()),
         )
 
@@ -174,6 +181,19 @@ class YoloSettings:
     heatmap_opacity: float = 0.45
     heatmap_decay: float = 0.96
     motion_prediction_enabled: bool = True
+    hand_gesture_enabled: bool = False
+    hand_gesture_min_confidence: float = 0.75
+    hand_gesture_cooldown_sec: float = 2.0
+    hand_gesture_on_motion_only: bool = True
+    hand_gesture_types: list[str] = field(
+        default_factory=lambda: [
+            "mano_abierta",
+            "punio",
+            "pulgar_arriba",
+            "saludo",
+        ]
+    )
+    hand_max_num_hands: int = 2
     updated_at: str = field(default_factory=_now_iso)
 
     @classmethod
@@ -208,6 +228,23 @@ class YoloSettings:
             motion_prediction_enabled=bool(
                 data.get("motion_prediction_enabled", True)
             ),
+            hand_gesture_enabled=bool(data.get("hand_gesture_enabled", False)),
+            hand_gesture_min_confidence=float(
+                data.get("hand_gesture_min_confidence", 0.75)
+            ),
+            hand_gesture_cooldown_sec=float(
+                data.get("hand_gesture_cooldown_sec", 2.0)
+            ),
+            hand_gesture_on_motion_only=bool(
+                data.get("hand_gesture_on_motion_only", True)
+            ),
+            hand_gesture_types=list(
+                data.get(
+                    "hand_gesture_types",
+                    ["mano_abierta", "punio", "pulgar_arriba", "saludo"],
+                )
+            ),
+            hand_max_num_hands=int(data.get("hand_max_num_hands", 2)),
             updated_at=data.get("updated_at", _now_iso()),
         )
 
@@ -247,9 +284,11 @@ class AlertRule:
         "cambio_objetos",
         "cambio_escena",
     ])
+    gesture_types: list[str] = field(default_factory=list)
     notify_email: bool = False
     notify_telegram: bool = False
     notify_whatsapp: bool = False
+    notify_webhook: bool = False
     cooldown_sec: int = 60
     min_persons: int = 0
     created_at: str = field(default_factory=_now_iso)
@@ -267,9 +306,11 @@ class AlertRule:
             enabled=bool(data.get("enabled", True)),
             camera_ids=list(data.get("camera_ids", [])),
             event_types=list(data.get("event_types", [])),
+            gesture_types=list(data.get("gesture_types", [])),
             notify_email=bool(data.get("notify_email", False)),
             notify_telegram=bool(data.get("notify_telegram", False)),
             notify_whatsapp=bool(data.get("notify_whatsapp", False)),
+            notify_webhook=bool(data.get("notify_webhook", False)),
             cooldown_sec=int(data.get("cooldown_sec", 60)),
             min_persons=int(data.get("min_persons", 0)),
             created_at=data.get("created_at", _now_iso()),
@@ -282,11 +323,16 @@ class AlertRule:
     def matches_camera(self, camera_id: str) -> bool:
         return not self.camera_ids or camera_id in self.camera_ids
 
-    def matches_event(self, event_type: str, person_count: int) -> bool:
+    def matches_event(
+        self, event_type: str, person_count: int, gesture: str | None = None
+    ) -> bool:
         if not self.enabled:
             return False
         if event_type not in self.event_types:
             return False
+        if event_type == "gesto_mano" and self.gesture_types:
+            if not gesture or gesture not in self.gesture_types:
+                return False
         return person_count >= self.min_persons
 
 

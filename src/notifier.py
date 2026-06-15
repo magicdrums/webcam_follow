@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 import requests
 
-from src.config import AppConfig, EmailConfig, TelegramConfig, WhatsAppConfig
+from src.config import AppConfig, EmailConfig, TelegramConfig, WebhookConfig, WhatsAppConfig
 from src.detector import DetectionEvent
 
 logger = logging.getLogger(__name__)
@@ -218,6 +218,55 @@ class WhatsAppNotifier(Notifier):
         )
         response.raise_for_status()
         logger.info("Notificación enviada por WhatsApp (Twilio)")
+
+
+class WebhookNotifier(Notifier):
+    """Webhook HTTP JSON para Home Assistant, Google Home (vía HA), Node-RED, etc."""
+
+    def __init__(self, config: WebhookConfig) -> None:
+        self.config = config
+
+    def send(
+        self,
+        event: DetectionEvent,
+        snapshot_path: Path | None,
+        *,
+        camera_id: str = "",
+        camera_name: str = "",
+    ) -> None:
+        if not self.config.enabled:
+            return
+        if not self.config.url.strip():
+            logger.warning("Webhook omitido: URL vacía")
+            return
+
+        payload = {
+            "source": "webcam_follow",
+            "event_type": event.event_type.value,
+            "message": event.message,
+            "camera_id": camera_id,
+            "camera_name": camera_name,
+            "timestamp": event.timestamp.isoformat(),
+            "person_count": event.person_count,
+            "object_counts": dict(event.object_counts),
+            "motion_area": event.motion_area,
+            "gesture": event.gesture,
+            "gesture_confidence": event.gesture_confidence,
+            "snapshot_filename": snapshot_path.name if snapshot_path else None,
+            "automation_target": "google_home",
+        }
+        headers = {"Content-Type": "application/json", "User-Agent": "webcam-follow/1.0"}
+        if self.config.secret.strip():
+            headers["Authorization"] = f"Bearer {self.config.secret.strip()}"
+
+        response = requests.post(
+            self.config.url.strip(),
+            json=payload,
+            headers=headers,
+            timeout=15,
+        )
+        response.raise_for_status()
+        logger.info("Webhook enviado (%s)", event.event_type.value)
 
 
 class NotificationService:

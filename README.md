@@ -194,8 +194,9 @@ Con `WEB_ENABLED=true` (activo por defecto en contenedor) tienes un panel en el 
 
 #### Canales de notificación (`/admin` → Canales)
 
-- Configura **Email (SMTP)**, **Telegram** y **WhatsApp (Twilio)** desde la web
+- Configura **Email (SMTP)**, **Telegram**, **WhatsApp (Twilio)** y **Webhook** desde la web
 - Activa/desactiva cada canal sin editar `.env`
+- El webhook envía JSON a Home Assistant para integrar **Google Home**
 - Botón **Probar** por canal para verificar credenciales
 - Persistencia en `data/notification_channels.json`
 - Las reglas de alerta referencian estos canales (checkbox email/telegram/whatsapp)
@@ -214,6 +215,13 @@ Con `WEB_ENABLED=true` (activo por defecto en contenedor) tienes un panel en el 
 - Clases COCO: presets o selección personalizada
 - **YOLO solo con movimiento** y guardado de capturas
 - Cambios en caliente sin reiniciar (`data/yolo_settings.json`)
+
+#### Gestos de mano y Google Home
+
+- Detección de gestos con **MediaPipe Hands** (mano abierta, puño, pulgar arriba/abajo, paz, saludo)
+- **Webhook JSON** hacia Home Assistant para automatizar **Google Home**, luces y escenas
+- Configuración: **YOLO / Detección → Gestos de mano**, **Canales → Webhook**, **Reglas → Gesto de mano**
+- Guía completa: [docs/gestos-google-home.md](docs/gestos-google-home.md)
 
 #### Mapa de calor y predicción
 

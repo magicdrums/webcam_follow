@@ -8,6 +8,12 @@ import cv2
 import numpy as np
 
 from src.config import DetectionConfig
+from src.hand_gestures import (
+    DEFAULT_GESTURE_TYPES,
+    GESTURE_LABELS,
+    HandGestureDetector,
+    mediapipe_available,
+)
 from src.platform import resolve_yolo_device
 
 try:
@@ -21,6 +27,7 @@ class EventType(str, Enum):
     OBJECT = "objeto_detectado"
     OBJECT_CHANGE = "cambio_objetos"
     SCENE_CHANGE = "cambio_escena"
+    HAND_GESTURE = "gesto_mano"
 
 
 @dataclass
@@ -37,6 +44,8 @@ class DetectionEvent:
     object_counts: dict[str, int] = field(default_factory=dict)
     motion_area: int = 0
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    gesture: str | None = None
+    gesture_confidence: float = 0.0
 
     @property
     def person_count(self) -> int:
@@ -59,6 +68,7 @@ class VisionDetector:
     """
     Movimiento: OpenCV MOG2.
     Personas y objetos: YOLOv8 (clases COCO configurables).
+    Gestos de mano: MediaPipe Hands (opcional).
     """
 
     def __init__(self, config: DetectionConfig) -> None:
@@ -69,6 +79,10 @@ class VisionDetector:
         )
         self._state = DetectionState()
         self._model = self._load_model()
+        self._hand_gestures = HandGestureDetector(
+            max_num_hands=config.hand_max_num_hands,
+        )
+        self._sync_hand_gesture_settings()
 
     def _load_model(self):
         if YOLO is None:
@@ -85,6 +99,15 @@ class VisionDetector:
             self._device = resolve_yolo_device(config.yolo_device)
         if model_changed:
             self._model = self._load_model()
+        self._sync_hand_gesture_settings()
+
+    def _sync_hand_gesture_settings(self) -> None:
+        self._hand_gestures.update_settings(
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.5,
+            max_num_hands=self.config.hand_max_num_hands,
+            enabled=self.config.hand_gesture_enabled and mediapipe_available(),
+        )
 
     def _detect_motion(self, frame: np.ndarray) -> tuple[bool, int, np.ndarray]:
         fg_mask = self._bg_subtractor.apply(frame)
@@ -216,6 +239,31 @@ class VisionDetector:
 
         self._state.last_object_counts = dict(object_counts)
         self._state.last_scene_hash = scene_hash
+
+        gesture_results, annotated = self._hand_gestures.analyze(
+            annotated,
+            enabled=self.config.hand_gesture_enabled,
+            allowed_gestures=self.config.hand_gesture_types,
+            min_confidence=self.config.hand_gesture_min_confidence,
+            cooldown_sec=self.config.hand_gesture_cooldown_sec,
+            motion_detected=motion_detected,
+            on_motion_only=self.config.hand_gesture_on_motion_only,
+        )
+        for result in gesture_results:
+            label = GESTURE_LABELS.get(result.gesture, result.gesture)
+            events.append(
+                DetectionEvent(
+                    event_type=EventType.HAND_GESTURE,
+                    message=(
+                        f"Gesto detectado: {label} "
+                        f"({result.handedness}, {result.confidence:.0%})"
+                    ),
+                    object_counts=object_counts,
+                    motion_area=motion_area,
+                    gesture=result.gesture,
+                    gesture_confidence=result.confidence,
+                )
+            )
 
         for obj in detected_objects:
             x1, y1, x2, y2 = obj.bbox
