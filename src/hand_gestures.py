@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
+import urllib.request
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-try:
-    import mediapipe as mp
+MEDIAPIPE_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+)
 
-    MEDIAPIPE_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    MEDIAPIPE_AVAILABLE = False
-    mp = None  # type: ignore[assignment]
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    (0, 9), (9, 10), (10, 11), (11, 12),
+    (0, 13), (13, 14), (14, 15), (15, 16),
+    (0, 17), (17, 18), (18, 19), (19, 20),
+    (5, 9), (9, 13), (13, 17),
+]
 
 GESTURE_LABELS: dict[str, str] = {
     "mano_abierta": "Mano abierta",
@@ -34,7 +43,6 @@ DEFAULT_GESTURE_TYPES = [
     "saludo",
 ]
 
-# Índices MediaPipe Hands
 _WRIST = 0
 _THUMB_TIP = 4
 _THUMB_IP = 3
@@ -48,16 +56,89 @@ _RING_PIP = 14
 _PINKY_TIP = 20
 _PINKY_PIP = 18
 
+_MEDIAPIPE_TASKS_OK = False
+_mp = None
+_vision = None
+_model_download_attempted = False
+
+
+def _try_import_mediapipe_tasks() -> bool:
+    global _MEDIAPIPE_TASKS_OK, _mp, _vision
+    if _MEDIAPIPE_TASKS_OK:
+        return True
+    try:
+        import mediapipe as mp
+        from mediapipe.tasks.python import vision
+
+        _mp = mp
+        _vision = vision
+        _MEDIAPIPE_TASKS_OK = True
+        return True
+    except ImportError:
+        return False
+
+
+def _model_candidates() -> list[Path]:
+    repo_root = Path(__file__).resolve().parent.parent
+    env_path = os.getenv("HAND_LANDMARKER_MODEL", "").strip()
+    paths: list[Path] = []
+    if env_path:
+        paths.append(Path(env_path))
+    paths.extend(
+        [
+            repo_root / "data" / "models" / "hand_landmarker.task",
+            Path("/app/data/models/hand_landmarker.task"),
+        ]
+    )
+    return paths
+
+
+def _resolve_model_path() -> Path | None:
+    for candidate in _model_candidates():
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _download_model() -> Path | None:
+    global _model_download_attempted
+    if _model_download_attempted:
+        return _resolve_model_path()
+    _model_download_attempted = True
+
+    env_path = os.getenv("HAND_LANDMARKER_MODEL", "").strip()
+    if env_path:
+        target = Path(env_path)
+    else:
+        target = (
+            Path(__file__).resolve().parent.parent
+            / "data"
+            / "models"
+            / "hand_landmarker.task"
+        )
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        logger.info("Descargando modelo MediaPipe Hands → %s", target)
+        urllib.request.urlretrieve(MEDIAPIPE_MODEL_URL, target)
+        if target.is_file() and target.stat().st_size > 1024:
+            return target
+    except Exception:
+        logger.exception("No se pudo descargar hand_landmarker.task")
+    return None
+
+
+def mediapipe_available() -> bool:
+    if not _try_import_mediapipe_tasks():
+        return False
+    return _resolve_model_path() is not None or True
+
 
 @dataclass
 class HandGestureResult:
     gesture: str
     confidence: float
     handedness: str
-
-
-def mediapipe_available() -> bool:
-    return MEDIAPIPE_AVAILABLE
 
 
 def _landmark_xy(landmarks, index: int) -> tuple[float, float]:
@@ -106,8 +187,21 @@ def _classify_static_gesture(landmarks, handedness: str) -> tuple[str | None, fl
     return None, 0.0
 
 
+def _draw_hand_landmarks(image: np.ndarray, landmarks) -> None:
+    height, width = image.shape[:2]
+
+    def point(idx: int) -> tuple[int, int]:
+        lm = landmarks[idx]
+        return int(lm.x * width), int(lm.y * height)
+
+    for start, end in HAND_CONNECTIONS:
+        cv2.line(image, point(start), point(end), (80, 200, 255), 2)
+    for idx in range(21):
+        cv2.circle(image, point(idx), 3, (255, 220, 80), -1)
+
+
 class HandGestureDetector:
-    """Detecta gestos de mano con MediaPipe Hands (rule-based sobre landmarks)."""
+    """Detecta gestos de mano con MediaPipe Tasks (Hand Landmarker)."""
 
     def __init__(
         self,
@@ -117,12 +211,14 @@ class HandGestureDetector:
         max_num_hands: int = 2,
     ) -> None:
         self._enabled = False
-        self._hands = None
+        self._landmarker = None
         self._min_detection = min_detection_confidence
         self._min_tracking = min_tracking_confidence
         self._max_num_hands = max(1, min(max_num_hands, 2))
         self._last_gesture_at: dict[str, float] = {}
         self._wrist_history: deque[tuple[float, float]] = deque(maxlen=24)
+        self._frame_timestamp_ms = 0
+        self._init_error_logged = False
 
     def update_settings(
         self,
@@ -132,27 +228,64 @@ class HandGestureDetector:
         max_num_hands: int,
         enabled: bool,
     ) -> None:
+        settings_changed = (
+            abs(min_detection_confidence - self._min_detection) > 1e-6
+            or abs(min_tracking_confidence - self._min_tracking) > 1e-6
+            or max(1, min(max_num_hands, 2)) != self._max_num_hands
+        )
         self._min_detection = min_detection_confidence
         self._min_tracking = min_tracking_confidence
         self._max_num_hands = max(1, min(max_num_hands, 2))
-        if enabled and not self._enabled:
-            self._ensure_hands()
-        if not enabled and self._hands is not None:
-            self._hands.close()
-            self._hands = None
+
+        if enabled and (not self._enabled or settings_changed):
+            self._close_landmarker()
+            self._ensure_landmarker()
+        if not enabled:
+            self._close_landmarker()
         self._enabled = enabled
 
-    def _ensure_hands(self) -> bool:
-        if not MEDIAPIPE_AVAILABLE:
+    def _ensure_landmarker(self) -> bool:
+        if self._landmarker is not None:
+            return True
+        if not _try_import_mediapipe_tasks():
+            if not self._init_error_logged:
+                logger.warning("MediaPipe Tasks no disponible; gestos de mano desactivados")
+                self._init_error_logged = True
             return False
-        if self._hands is None:
-            self._hands = mp.solutions.hands.Hands(
-                static_image_mode=False,
-                max_num_hands=self._max_num_hands,
-                min_detection_confidence=self._min_detection,
+
+        model_path = _resolve_model_path() or _download_model()
+        if model_path is None:
+            if not self._init_error_logged:
+                logger.warning(
+                    "Modelo hand_landmarker.task no encontrado; gestos de mano desactivados"
+                )
+                self._init_error_logged = True
+            return False
+
+        try:
+            options = _vision.HandLandmarkerOptions(
+                base_options=_mp.tasks.BaseOptions(model_asset_path=str(model_path)),
+                running_mode=_vision.RunningMode.VIDEO,
+                num_hands=self._max_num_hands,
+                min_hand_detection_confidence=self._min_detection,
+                min_hand_presence_confidence=self._min_tracking,
                 min_tracking_confidence=self._min_tracking,
             )
-        return True
+            self._landmarker = _vision.HandLandmarker.create_from_options(options)
+            self._frame_timestamp_ms = 0
+            self._init_error_logged = False
+            logger.info("MediaPipe Hand Landmarker listo (%s)", model_path.name)
+            return True
+        except Exception:
+            logger.exception("No se pudo iniciar MediaPipe Hand Landmarker")
+            self._landmarker = None
+            return False
+
+    def _close_landmarker(self) -> None:
+        if self._landmarker is not None:
+            self._landmarker.close()
+            self._landmarker = None
+        self._frame_timestamp_ms = 0
 
     def _detect_wave(self) -> tuple[bool, float]:
         if len(self._wrist_history) < 10:
@@ -197,44 +330,42 @@ class HandGestureDetector:
         if on_motion_only and not motion_detected:
             return [], annotated
 
-        if not MEDIAPIPE_AVAILABLE:
-            return [], annotated
-
-        if not self._ensure_hands():
+        if not self._ensure_landmarker() or self._landmarker is None:
             return [], annotated
 
         allowed = set(allowed_gestures or DEFAULT_GESTURE_TYPES)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self._hands.process(rgb)
+        if not rgb.flags["C_CONTIGUOUS"]:
+            rgb = np.ascontiguousarray(rgb)
+
+        self._frame_timestamp_ms += 33
+        mp_image = _mp.Image(image_format=_mp.ImageFormat.SRGB, data=rgb)
+        try:
+            results = self._landmarker.detect_for_video(mp_image, self._frame_timestamp_ms)
+        except Exception:
+            logger.exception("Error detectando manos con MediaPipe")
+            return [], frame
+
         annotated = frame.copy()
         detected: list[HandGestureResult] = []
         now = time.monotonic()
 
-        if not results.multi_hand_landmarks:
+        if not results.hand_landmarks:
             return [], annotated
 
-        mp_drawing = mp.solutions.drawing_utils
-        mp_styles = mp.solutions.drawing_styles
+        for index, hand_landmarks in enumerate(results.hand_landmarks):
+            label = "Unknown"
+            if results.handedness and index < len(results.handedness):
+                categories = results.handedness[index]
+                if categories:
+                    label = categories[0].category_name
 
-        for hand_landmarks, handedness in zip(
-            results.multi_hand_landmarks,
-            results.multi_handedness or [],
-        ):
-            label = handedness.classification[0].label if handedness else "Unknown"
-            mp_drawing.draw_landmarks(
-                annotated,
-                hand_landmarks,
-                mp.solutions.hands.HAND_CONNECTIONS,
-                mp_styles.get_default_hand_landmarks_style(),
-                mp_styles.get_default_hand_connections_style(),
-            )
+            _draw_hand_landmarks(annotated, hand_landmarks)
 
-            wrist_x, _ = _landmark_xy(hand_landmarks.landmark, _WRIST)
+            wrist_x, _ = _landmark_xy(hand_landmarks, _WRIST)
             self._wrist_history.append((now, wrist_x))
 
-            gesture_id, confidence = _classify_static_gesture(
-                hand_landmarks.landmark, label
-            )
+            gesture_id, confidence = _classify_static_gesture(hand_landmarks, label)
             wave_ok, wave_conf = self._detect_wave()
             if wave_ok and "saludo" in allowed and wave_conf >= min_confidence:
                 gesture_id, confidence = "saludo", wave_conf
@@ -269,7 +400,5 @@ class HandGestureDetector:
         return detected, annotated
 
     def close(self) -> None:
-        if self._hands is not None:
-            self._hands.close()
-            self._hands = None
+        self._close_landmarker()
         self._enabled = False

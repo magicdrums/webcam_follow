@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -12,7 +13,6 @@ from src.hand_gestures import (
     DEFAULT_GESTURE_TYPES,
     GESTURE_LABELS,
     HandGestureDetector,
-    mediapipe_available,
 )
 from src.platform import resolve_yolo_device
 
@@ -20,6 +20,8 @@ try:
     from ultralytics import YOLO
 except ImportError:  # pragma: no cover
     YOLO = None  # type: ignore[misc, assignment]
+
+logger = logging.getLogger(__name__)
 
 
 class EventType(str, Enum):
@@ -102,12 +104,15 @@ class VisionDetector:
         self._sync_hand_gesture_settings()
 
     def _sync_hand_gesture_settings(self) -> None:
-        self._hand_gestures.update_settings(
-            min_detection_confidence=0.6,
-            min_tracking_confidence=0.5,
-            max_num_hands=self.config.hand_max_num_hands,
-            enabled=self.config.hand_gesture_enabled and mediapipe_available(),
-        )
+        try:
+            self._hand_gestures.update_settings(
+                min_detection_confidence=0.6,
+                min_tracking_confidence=0.5,
+                max_num_hands=self.config.hand_max_num_hands,
+                enabled=self.config.hand_gesture_enabled,
+            )
+        except Exception:
+            logger.exception("No se pudo sincronizar gestos de mano; se desactivan temporalmente")
 
     def _detect_motion(self, frame: np.ndarray) -> tuple[bool, int, np.ndarray]:
         fg_mask = self._bg_subtractor.apply(frame)

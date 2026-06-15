@@ -48,6 +48,10 @@ USER appuser
 # Descarga YOLOv8n en build (evita red en el primer arranque)
 RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
+# Modelo MediaPipe Hand Landmarker (Tasks API; mp.solutions eliminado en >=0.10.30)
+RUN mkdir -p /app/data/models \
+    && python -c "import urllib.request; urllib.request.urlretrieve('https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', '/app/data/models/hand_landmarker.task')"
+
 USER root
 
 VOLUME ["/app/snapshots", "/app/data"]
