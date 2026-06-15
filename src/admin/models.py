@@ -167,6 +167,9 @@ class YoloSettings:
     )
     snapshot_cooldown_sec: float = 60.0
     snapshot_min_persons: int = 0
+    motion_recording_enabled: bool = False
+    motion_recording_duration_sec: float = 30.0
+    motion_recording_cooldown_sec: float = 120.0
     heatmap_enabled: bool = True
     heatmap_opacity: float = 0.45
     heatmap_decay: float = 0.96
@@ -192,6 +195,13 @@ class YoloSettings:
             ),
             snapshot_cooldown_sec=float(data.get("snapshot_cooldown_sec", 60.0)),
             snapshot_min_persons=int(data.get("snapshot_min_persons", 0)),
+            motion_recording_enabled=bool(data.get("motion_recording_enabled", False)),
+            motion_recording_duration_sec=float(
+                data.get("motion_recording_duration_sec", 30.0)
+            ),
+            motion_recording_cooldown_sec=float(
+                data.get("motion_recording_cooldown_sec", 120.0)
+            ),
             heatmap_enabled=bool(data.get("heatmap_enabled", True)),
             heatmap_opacity=float(data.get("heatmap_opacity", 0.45)),
             heatmap_decay=float(data.get("heatmap_decay", 0.96)),

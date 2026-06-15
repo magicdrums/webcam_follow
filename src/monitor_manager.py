@@ -17,6 +17,7 @@ from src.admin.store import AdminStore
 from src.detector import DetectionEvent, EventType, VisionDetector
 from src.admin.notifications import StoreNotificationService
 from src.motion_analytics import MotionAnalytics
+from src.motion_recording import MotionRecorder
 from src.notifier import save_snapshot
 from src.platform import log_platform_info
 from src.video_source import open_video_source
@@ -114,6 +115,9 @@ class CameraWorker:
         self._last_snapshot_at = 0.0
         self._settings_version = ""
         self._motion_analytics = MotionAnalytics()
+        self._motion_recorder = MotionRecorder(
+            self.snapshot_dir, self.camera.name
+        )
         self._last_frame_mono = 0.0
 
     def start(self) -> None:
@@ -170,7 +174,10 @@ class CameraWorker:
         if not self.snapshot_dir.exists():
             return []
         files = sorted(
-            self.snapshot_dir.glob("*.jpg"),
+            (
+                *self.snapshot_dir.glob("*.jpg"),
+                *self.snapshot_dir.glob("*.mp4"),
+            ),
             key=lambda path: path.stat().st_mtime,
             reverse=True,
         )
@@ -179,6 +186,7 @@ class CameraWorker:
                 "name": path.name,
                 "url": f"/snapshots/{self.camera.id}/{path.name}",
                 "time": datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+                "kind": "video" if path.suffix.lower() == ".mp4" else "image",
             }
             for path in files[:limit]
         ]
@@ -192,6 +200,18 @@ class CameraWorker:
 
     def _show_heatmap(self, yolo_settings) -> bool:
         return bool(yolo_settings.heatmap_enabled and self.camera.heatmap_enabled)
+
+    def _process_motion_recording(
+        self, frame, motion_detected: bool, yolo_settings, fps: float
+    ) -> None:
+        self._motion_recorder.process_frame(
+            frame,
+            motion_detected=motion_detected,
+            enabled=yolo_settings.motion_recording_enabled,
+            duration_sec=yolo_settings.motion_recording_duration_sec,
+            cooldown_sec=yolo_settings.motion_recording_cooldown_sec,
+            fps=fps,
+        )
 
     def _handle_events(
         self,
@@ -443,6 +463,9 @@ class CameraWorker:
                             fps,
                             snap_dict,
                         )
+                        self._process_motion_recording(
+                            display, last_motion, yolo_settings, fps
+                        )
                         continue
 
                     last_detection = now
@@ -489,12 +512,16 @@ class CameraWorker:
                         fps,
                         analytics_snap.to_dict(),
                     )
+                    self._process_motion_recording(
+                        annotated, last_motion, yolo_settings, fps
+                    )
                 except Exception:
                     logger.exception(
                         "[%s] Error procesando frame; se continúa",
                         self.camera.name,
                     )
         finally:
+            self._motion_recorder.close()
             video.release()
             with self._lock:
                 self._status.connected = False

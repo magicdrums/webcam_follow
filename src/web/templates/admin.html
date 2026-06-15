@@ -325,6 +325,21 @@
                 <input type="number" id="yolo-min-motion-area" min="100" step="100" value="5000">
               </label>
             </div>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="yolo-motion-recording">
+              <span>Grabar vídeo al detectar movimiento</span>
+            </label>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Duración de la grabación (s)</span>
+                <input type="number" id="yolo-motion-recording-duration" min="5" max="300" step="1" value="30">
+              </label>
+              <label class="form__field">
+                <span>Cooldown entre grabaciones (s)</span>
+                <input type="number" id="yolo-motion-recording-cooldown" min="0" step="1" value="120">
+              </label>
+            </div>
+            <p class="muted form-hint">Los clips MP4 se guardan en la carpeta de capturas de cada cámara.</p>
           </fieldset>
 
           <fieldset class="form__fieldset">

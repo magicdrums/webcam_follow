@@ -284,7 +284,11 @@ function renderSnapshots(items) {
     .map(
       (s) => `
     <a class="snapshot" href="${s.url}" target="_blank" rel="noopener">
-      <img src="${s.url}" alt="${s.name}" loading="lazy">
+      ${
+        s.kind === "video"
+          ? `<video src="${s.url}" muted playsinline></video>`
+          : `<img src="${s.url}" alt="${s.name}" loading="lazy">`
+      }
       <span>${s.name}</span>
     </a>`
     )

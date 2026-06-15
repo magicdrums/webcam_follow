@@ -12,7 +12,7 @@ from src.admin.models import Camera, SnapshotSettings
 logger = logging.getLogger(__name__)
 
 _FILENAME_RE = re.compile(
-    r"^(\d{8})_(\d{6})_(.+)\.jpg$",
+    r"^(\d{8})_(\d{6})_(.+)\.(jpg|mp4)$",
     re.IGNORECASE,
 )
 
@@ -28,8 +28,8 @@ def format_bytes(size: int) -> str:
 def _parse_filename(name: str) -> dict[str, str]:
     match = _FILENAME_RE.match(name)
     if not match:
-        return {"event_type": "", "timestamp": ""}
-    date_part, time_part, event = match.groups()
+        return {"event_type": "", "timestamp": "", "media_type": ""}
+    date_part, time_part, event, ext = match.groups()
     try:
         ts = datetime.strptime(f"{date_part}{time_part}", "%Y%m%d%H%M%S").replace(
             tzinfo=timezone.utc
@@ -37,7 +37,7 @@ def _parse_filename(name: str) -> dict[str, str]:
         iso = ts.isoformat(timespec="seconds")
     except ValueError:
         iso = ""
-    return {"event_type": event, "timestamp": iso}
+    return {"event_type": event, "timestamp": iso, "media_type": ext.lower()}
 
 
 def _camera_dirs(snapshot_root: Path, camera_id: str | None) -> list[tuple[str, Path]]:
@@ -82,15 +82,21 @@ class SnapshotService:
         for cam_id, directory in _camera_dirs(self.snapshot_root, camera_id):
             if not directory.exists():
                 continue
-            for path in directory.glob("*.jpg"):
+            for path in sorted(
+                (*directory.glob("*.jpg"), *directory.glob("*.mp4")),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            ):
                 stat = path.stat()
                 meta = _parse_filename(path.name)
+                suffix = path.suffix.lower()
                 items.append(
                     {
                         "camera_id": cam_id,
                         "camera_name": names.get(cam_id, cam_id),
                         "filename": path.name,
                         "url": f"/snapshots/{cam_id}/{path.name}",
+                        "media_type": meta.get("media_type") or suffix.lstrip("."),
                         "size_bytes": stat.st_size,
                         "size_label": format_bytes(stat.st_size),
                         "mtime": datetime.fromtimestamp(
@@ -131,7 +137,10 @@ class SnapshotService:
         if not directory.is_dir():
             return 0
         count = 0
-        for path in directory.glob("*.jpg"):
+        for path in sorted(
+            (*directory.glob("*.jpg"), *directory.glob("*.mp4")),
+            key=lambda item: item.stat().st_mtime,
+        ):
             path.unlink(missing_ok=True)
             count += 1
         return count
@@ -148,7 +157,10 @@ class SnapshotService:
         for _cam_id, directory in _camera_dirs(self.snapshot_root, None):
             if not directory.is_dir():
                 continue
-            files = sorted(directory.glob("*.jpg"), key=lambda p: p.stat().st_mtime)
+            files = sorted(
+                (*directory.glob("*.jpg"), *directory.glob("*.mp4")),
+                key=lambda p: p.stat().st_mtime,
+            )
 
             for path in list(files):
                 if age_cutoff is not None and path.stat().st_mtime < age_cutoff:
@@ -157,7 +169,7 @@ class SnapshotService:
 
             if settings.max_per_camera > 0:
                 remaining = sorted(
-                    directory.glob("*.jpg"),
+                    (*directory.glob("*.jpg"), *directory.glob("*.mp4")),
                     key=lambda p: p.stat().st_mtime,
                     reverse=True,
                 )

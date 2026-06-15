@@ -466,11 +466,13 @@ body {
 
 .snapshot:hover { border-color: var(--accent); }
 
-.snapshot img {
+.snapshot img,
+.snapshot video {
   width: 100%;
   aspect-ratio: 4/3;
   object-fit: cover;
   display: block;
+  background: #000;
 }
 
 .snapshot span {

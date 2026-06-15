@@ -665,6 +665,9 @@ async function loadYoloAdmin() {
   $("yolo-heatmap-decay").value = cfg.heatmap_decay ?? 0.96;
   $("yolo-motion-threshold").value = cfg.motion_threshold;
   $("yolo-min-motion-area").value = cfg.min_motion_area;
+  $("yolo-motion-recording").checked = cfg.motion_recording_enabled === true;
+  $("yolo-motion-recording-duration").value = cfg.motion_recording_duration_sec ?? 30;
+  $("yolo-motion-recording-cooldown").value = cfg.motion_recording_cooldown_sec ?? 120;
   $("yolo-classes-mode").value = cfg.detect_classes_mode || "default";
   $("yolo-classes-custom").value = cfg.detect_classes_custom || "";
   if (cfg.detect_class_ids) {
@@ -722,6 +725,13 @@ $("yolo-config-form").addEventListener("submit", async (e) => {
     motion_prediction_enabled: $("yolo-prediction-enabled").checked,
     motion_threshold: parseInt($("yolo-motion-threshold").value, 10),
     min_motion_area: parseInt($("yolo-min-motion-area").value, 10),
+    motion_recording_enabled: $("yolo-motion-recording").checked,
+    motion_recording_duration_sec: parseFloat(
+      $("yolo-motion-recording-duration").value
+    ),
+    motion_recording_cooldown_sec: parseFloat(
+      $("yolo-motion-recording-cooldown").value
+    ),
     detect_classes_mode: $("yolo-classes-mode").value,
     detect_classes_custom: customIds,
   };
@@ -810,7 +820,11 @@ async function loadSnapshotsAdmin() {
             <tr>
               <td>
                 <a href="${s.url}" target="_blank" rel="noopener">
-                  <img src="${s.url}" alt="" width="80" height="45" style="object-fit:cover;border-radius:4px">
+                  ${
+                    (s.media_type || "").toLowerCase() === "mp4"
+                      ? `<video src="${s.url}" width="80" height="45" muted playsinline style="object-fit:cover;border-radius:4px"></video>`
+                      : `<img src="${s.url}" alt="" width="80" height="45" style="object-fit:cover;border-radius:4px">`
+                  }
                 </a>
               </td>
               <td>${s.camera_name}</td>

@@ -201,6 +201,10 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             abort(400, description="snapshot_min_persons no puede ser negativo")
         if updated.save_snapshots and not updated.snapshot_event_types:
             abort(400, description="Selecciona al menos un tipo de evento para capturas")
+        if updated.motion_recording_duration_sec < 5 or updated.motion_recording_duration_sec > 300:
+            abort(400, description="motion_recording_duration_sec debe estar entre 5 y 300")
+        if updated.motion_recording_cooldown_sec < 0:
+            abort(400, description="motion_recording_cooldown_sec no puede ser negativo")
         store.update_yolo_settings(updated)
         return jsonify(yolo_settings_to_public_dict(updated))
 
