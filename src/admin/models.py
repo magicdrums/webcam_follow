@@ -118,6 +118,9 @@ class NotificationChannels:
     telegram_enabled: bool = False
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    telegram_bot_enabled: bool = True
+    telegram_bot_video_sec: float = 10.0
+    telegram_motion_wait_sec: float = 60.0
     whatsapp_enabled: bool = False
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
@@ -141,6 +144,11 @@ class NotificationChannels:
             telegram_enabled=bool(data.get("telegram_enabled", False)),
             telegram_bot_token=data.get("telegram_bot_token", ""),
             telegram_chat_id=data.get("telegram_chat_id", ""),
+            telegram_bot_enabled=bool(data.get("telegram_bot_enabled", True)),
+            telegram_bot_video_sec=float(data.get("telegram_bot_video_sec", 10.0)),
+            telegram_motion_wait_sec=float(
+                data.get("telegram_motion_wait_sec", 60.0)
+            ),
             whatsapp_enabled=bool(data.get("whatsapp_enabled", False)),
             twilio_account_sid=data.get("twilio_account_sid", ""),
             twilio_auth_token=data.get("twilio_auth_token", ""),

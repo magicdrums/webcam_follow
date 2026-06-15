@@ -483,6 +483,9 @@ async function loadChannels() {
     ? "Configurado — dejar vacío para mantener"
     : "Bot token";
   $("ch-telegram-chat-id").value = ch.telegram_chat_id || "";
+  $("ch-telegram-bot-enabled").checked = ch.telegram_bot_enabled !== false;
+  $("ch-telegram-video-sec").value = ch.telegram_bot_video_sec ?? 10;
+  $("ch-telegram-motion-wait").value = ch.telegram_motion_wait_sec ?? 60;
 
   $("ch-whatsapp-enabled").checked = ch.whatsapp_enabled;
   $("ch-twilio-sid").value = ch.twilio_account_sid || "";
@@ -512,6 +515,9 @@ $("channels-form").addEventListener("submit", async (e) => {
     email_to: $("ch-email-to").value.trim(),
     telegram_enabled: $("ch-telegram-enabled").checked,
     telegram_chat_id: $("ch-telegram-chat-id").value.trim(),
+    telegram_bot_enabled: $("ch-telegram-bot-enabled").checked,
+    telegram_bot_video_sec: parseFloat($("ch-telegram-video-sec").value),
+    telegram_motion_wait_sec: parseFloat($("ch-telegram-motion-wait").value),
     whatsapp_enabled: $("ch-whatsapp-enabled").checked,
     twilio_account_sid: $("ch-twilio-sid").value.trim(),
     twilio_whatsapp_from: $("ch-twilio-from").value.trim(),

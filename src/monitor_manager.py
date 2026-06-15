@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import cv2
+import numpy as np
 
 from src.admin.camera_config import camera_snapshot_dir, camera_to_video_config
 from src.admin.snapshots import SnapshotRetentionWorker, SnapshotService
@@ -17,7 +18,7 @@ from src.admin.store import AdminStore
 from src.detector import DetectionEvent, EventType, VisionDetector
 from src.admin.notifications import StoreNotificationService
 from src.motion_analytics import MotionAnalytics
-from src.motion_recording import MotionRecorder
+from src.motion_recording import MotionRecorder, TimedClipRecorder
 from src.notifier import save_snapshot
 from src.platform import log_platform_info
 from src.video_source import open_video_source
@@ -119,6 +120,8 @@ class CameraWorker:
         self._motion_recorder = MotionRecorder(
             self.snapshot_dir, self.camera.name
         )
+        self._timed_clip: TimedClipRecorder | None = None
+        self._clip_lock = threading.Lock()
         self._last_frame_mono = 0.0
 
     def start(self) -> None:
@@ -191,6 +194,70 @@ class CameraWorker:
             }
             for path in files[:limit]
         ]
+
+    def capture_photo_file(self) -> Path | None:
+        jpeg = self.get_jpeg_frame()
+        if not jpeg:
+            return None
+        arr = np.frombuffer(jpeg, dtype=np.uint8)
+        image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if image is None:
+            return None
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        path = (
+            self.snapshot_dir
+            / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_telegram_foto.jpg"
+        )
+        if not cv2.imwrite(str(path), image):
+            return None
+        return path
+
+    def record_timed_clip(
+        self,
+        duration_sec: float,
+        *,
+        suffix: str = "telegram",
+        timeout_extra: float = 20.0,
+    ) -> Path | None:
+        with self._clip_lock:
+            if self._timed_clip is not None and not self._timed_clip.done.is_set():
+                return None
+            clip = TimedClipRecorder(
+                self.snapshot_dir,
+                self.camera.name,
+                duration_sec,
+                suffix=suffix,
+            )
+            self._timed_clip = clip
+
+        if not clip.done.wait(duration_sec + timeout_extra + 30):
+            with self._clip_lock:
+                if self._timed_clip is clip:
+                    self._timed_clip = None
+            return None
+
+        with self._clip_lock:
+            if self._timed_clip is clip:
+                self._timed_clip = None
+        return clip.result_path
+
+    def get_latest_media_file(self) -> Path | None:
+        items = self.list_snapshots(limit=1)
+        if not items:
+            return None
+        path = self.snapshot_dir / items[0]["name"]
+        return path if path.is_file() else None
+
+    def _feed_timed_clip(self, frame, fps: float) -> None:
+        with self._clip_lock:
+            clip = self._timed_clip
+        if clip is None or clip.done.is_set():
+            return
+        clip.write_frame(frame, fps)
+        if clip.done.is_set():
+            with self._clip_lock:
+                if self._timed_clip is clip:
+                    self._timed_clip = None
 
     def _should_notify_rule(self, rule_id: str, cooldown_sec: int) -> bool:
         elapsed = time.monotonic() - self._rule_cooldowns.get(rule_id, 0.0)
@@ -487,6 +554,7 @@ class CameraWorker:
                             fps,
                             snap_dict,
                         )
+                        self._feed_timed_clip(frame, fps)
                         self._process_motion_recording(
                             display, last_motion, yolo_settings, fps
                         )
@@ -536,6 +604,7 @@ class CameraWorker:
                         fps,
                         analytics_snap.to_dict(),
                     )
+                    self._feed_timed_clip(frame, fps)
                     self._process_motion_recording(
                         annotated, last_motion, yolo_settings, fps
                     )
@@ -563,6 +632,7 @@ class MonitorManager:
         self._started = False
         self._snapshot_service = SnapshotService(app_config.detection.snapshot_dir)
         self._retention_worker: SnapshotRetentionWorker | None = None
+        self._telegram_bot: TelegramBotWorker | None = None
 
     def start(self) -> None:
         if self._started:
@@ -572,9 +642,13 @@ class MonitorManager:
         self.store.bootstrap_from_env(self.app_config)
         self.reload()
         self._start_retention_worker()
+        self._start_telegram_bot()
         self._started = True
 
     def stop(self) -> None:
+        if self._telegram_bot:
+            self._telegram_bot.stop()
+            self._telegram_bot = None
         if self._retention_worker:
             self._retention_worker.stop()
             self._retention_worker = None
@@ -702,3 +776,49 @@ class MonitorManager:
         deleted = self._retention_worker.run_once()
         if deleted:
             logger.info("Limpieza inicial de capturas: %d eliminada(s)", deleted)
+
+    def _start_telegram_bot(self) -> None:
+        if self._telegram_bot and self._telegram_bot.is_alive():
+            return
+        from src.telegram_bot import TelegramBotWorker
+
+        self._telegram_bot = TelegramBotWorker(self, self.store)
+        self._telegram_bot.start()
+
+    def resolve_camera_id(self, token: str | None) -> str | None:
+        if not token:
+            return self.get_active_camera_id()
+        needle = token.strip().lower()
+        if not needle:
+            return self.get_active_camera_id()
+        for camera in self.store.list_cameras():
+            if camera.id.lower().startswith(needle):
+                return camera.id
+            if camera.name.lower() == needle:
+                return camera.id
+        return None
+
+    def capture_photo(self, camera_id: str | None = None) -> Path | None:
+        worker = self.get_worker(camera_id)
+        return worker.capture_photo_file() if worker else None
+
+    def capture_video(
+        self, camera_id: str | None = None, duration_sec: float = 10.0
+    ) -> Path | None:
+        worker = self.get_worker(camera_id)
+        return worker.record_timed_clip(duration_sec) if worker else None
+
+    def get_latest_media(self, camera_id: str | None = None) -> Path | None:
+        worker = self.get_worker(camera_id)
+        return worker.get_latest_media_file() if worker else None
+
+    def wait_for_motion(
+        self, camera_id: str | None = None, max_wait_sec: float = 60.0
+    ) -> bool:
+        deadline = time.monotonic() + max(1.0, max_wait_sec)
+        while time.monotonic() < deadline:
+            status = self.get_status(camera_id)
+            if status and status.motion_detected:
+                return True
+            time.sleep(0.4)
+        return False

@@ -1,0 +1,46 @@
+# Bot de Telegram — foto y vídeo bajo demanda
+
+Con Telegram activado y el **bot interactivo** encendido, puedes pedir capturas desde el chat configurado en `TELEGRAM_CHAT_ID`.
+
+## Requisitos
+
+1. Crear un bot con [@BotFather](https://t.me/BotFather) y copiar el token.
+2. Obtener tu **Chat ID** (escribe al bot y consulta `getUpdates`, o usa @userinfobot).
+3. En **Admin → Canales**: activar Telegram, pegar token y chat ID, activar **Bot interactivo**.
+
+Solo responde al chat ID configurado (seguridad básica).
+
+## Comandos
+
+| Comando | Descripción |
+|---------|-------------|
+| `/foto [cámara]` | Foto instantánea del frame en vivo |
+| `/video [seg] [cámara]` | Graba vídeo N segundos (default 10) |
+| `/movimiento [seg] [cámara]` | Espera movimiento y graba |
+| `/ultimo [cámara]` | Envía la última foto/vídeo guardada |
+| `/camaras` | Lista cámaras |
+| `/estado [cámara]` | Movimiento, personas, FPS |
+| `/ayuda` | Ayuda |
+
+También funcionan sin `/`: `foto`, `video 15`, `movimiento`.
+
+**Cámara** opcional: nombre exacto o inicio del ID. Sin argumento usa la cámara activa en la web.
+
+## Ejemplos
+
+```
+/foto
+/video 20
+/movimiento 15 Entrada
+/ultimo
+/estado Habitacion Victor
+```
+
+## Configuración
+
+En **Admin → Canales → Telegram**:
+
+- **Duración vídeo por defecto** — para `/video` sin segundos
+- **Espera movimiento** — tiempo máximo para `/movimiento`
+
+Variables de entorno opcionales: `TELEGRAM_BOT_VIDEO_SEC`, `TELEGRAM_MOTION_WAIT_SEC`.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -379,3 +380,183 @@ class MotionRecorder:
     def close(self) -> None:
         if self._is_recording():
             self._finish_recording()
+
+
+class TimedClipRecorder:
+    """Graba un clip MP4 de duración fija (p. ej. pedido desde Telegram)."""
+
+    def __init__(
+        self,
+        output_dir: Path,
+        camera_name: str,
+        duration_sec: float,
+        *,
+        suffix: str = "telegram",
+    ) -> None:
+        self.output_dir = output_dir
+        self.camera_name = camera_name
+        self.duration_sec = max(1.0, duration_sec)
+        self.suffix = suffix
+        self._ffmpeg: subprocess.Popen[bytes] | None = None
+        self._writer: cv2.VideoWriter | None = None
+        self._used_opencv = False
+        self._recording_until = 0.0
+        self._output_path: Path | None = None
+        self._fps = 10.0
+        self._started = False
+        self._done = threading.Event()
+
+    @property
+    def done(self) -> threading.Event:
+        return self._done
+
+    @property
+    def result_path(self) -> Path | None:
+        return self._output_path
+
+    def write_frame(self, frame, fps: float) -> None:
+        if self._done.is_set():
+            return
+        if fps >= 1.0:
+            self._fps = min(max(fps, 5.0), 30.0)
+
+        if not self._started:
+            self._start(frame)
+            return
+
+        now = time.monotonic()
+        if self._ffmpeg is not None:
+            if self._ffmpeg.poll() is not None:
+                self._abort()
+                return
+            payload = frame if frame.flags["C_CONTIGUOUS"] else np.ascontiguousarray(frame)
+            try:
+                self._ffmpeg.stdin.write(payload.tobytes())
+            except (BrokenPipeError, OSError):
+                self._abort()
+                return
+        elif self._writer is not None:
+            self._writer.write(frame)
+
+        if now >= self._recording_until:
+            self._finish()
+
+    def _start(self, frame) -> None:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        height, width = frame.shape[:2]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = self.output_dir / f"{timestamp}_{self.suffix}.mp4"
+        now = time.monotonic()
+
+        if self._start_ffmpeg(frame, path, width, height):
+            self._output_path = path
+            self._recording_until = now + self.duration_sec
+            self._started = True
+            return
+
+        if self._start_opencv(frame, path, width, height):
+            self._used_opencv = True
+            self._output_path = path
+            self._recording_until = now + self.duration_sec
+            self._started = True
+            return
+
+        logger.error("[%s] No se pudo iniciar clip bajo demanda", self.camera_name)
+        self._done.set()
+
+    def _start_ffmpeg(self, frame, path: Path, width: int, height: int) -> bool:
+        encoder = _pick_h264_encoder()
+        if not encoder:
+            return False
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "rawvideo", "-vcodec", "rawvideo",
+            "-s", f"{width}x{height}", "-pix_fmt", "bgr24", "-r", str(self._fps),
+            "-i", "pipe:0", "-an", "-c:v", encoder,
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(path),
+        ]
+        if encoder == "libx264":
+            insert_at = cmd.index("-movflags")
+            cmd[insert_at:insert_at] = ["-preset", "veryfast", "-crf", "23"]
+        try:
+            proc = subprocess.Popen(
+                cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+            )
+        except OSError:
+            return False
+        payload = frame if frame.flags["C_CONTIGUOUS"] else np.ascontiguousarray(frame)
+        try:
+            proc.stdin.write(payload.tobytes())
+        except (BrokenPipeError, OSError):
+            proc.kill()
+            proc.wait(timeout=5)
+            path.unlink(missing_ok=True)
+            return False
+        if proc.poll() is not None:
+            path.unlink(missing_ok=True)
+            return False
+        self._ffmpeg = proc
+        return True
+
+    def _start_opencv(self, frame, path: Path, width: int, height: int) -> bool:
+        for codec in _OPENCV_CODECS:
+            candidate = cv2.VideoWriter(
+                str(path), cv2.VideoWriter_fourcc(*codec), self._fps, (width, height)
+            )
+            if candidate.isOpened():
+                self._writer = candidate
+                self._writer.write(frame)
+                return True
+            candidate.release()
+        return False
+
+    def _abort(self) -> None:
+        path = self._output_path
+        if self._ffmpeg is not None:
+            proc = self._ffmpeg
+            self._ffmpeg = None
+            if proc.stdin:
+                proc.stdin.close()
+            proc.kill()
+            proc.wait(timeout=5)
+        if self._writer is not None:
+            self._writer.release()
+            self._writer = None
+        self._output_path = None
+        if path and path.exists():
+            path.unlink(missing_ok=True)
+        self._done.set()
+
+    def _finish(self) -> None:
+        used_opencv = self._used_opencv
+        if self._ffmpeg is not None:
+            proc = self._ffmpeg
+            self._ffmpeg = None
+            if proc.stdin:
+                proc.stdin.close()
+            try:
+                proc.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        if self._writer is not None:
+            self._writer.release()
+            self._writer = None
+
+        path = self._output_path
+        self._output_path = None
+        self._started = False
+
+        if path and path.exists() and path.stat().st_size < 1024:
+            path.unlink(missing_ok=True)
+            path = None
+        elif path and used_opencv:
+            _transcode_mp4_for_browser(path)
+            if path.exists() and path.stat().st_size < 1024:
+                path.unlink(missing_ok=True)
+                path = None
+
+        if path and path.exists():
+            self._output_path = path
+            logger.info("[%s] Clip bajo demanda guardado: %s", self.camera_name, path.name)
+        self._done.set()

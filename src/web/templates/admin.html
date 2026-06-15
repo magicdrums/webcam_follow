@@ -530,6 +530,24 @@
               </label>
             </div>
             <button class="btn btn--sm" type="button" data-test-channel="telegram">Probar Telegram</button>
+            <label class="form__field form__field--check">
+              <input type="checkbox" id="ch-telegram-bot-enabled" checked>
+              <span>Bot interactivo (foto/vídeo bajo demanda)</span>
+            </label>
+            <p class="muted form-hint">
+              Comandos en el chat: <code>/foto</code>, <code>/video 15</code>,
+              <code>/movimiento</code>, <code>/ultimo</code>, <code>/camaras</code>, <code>/estado</code>, <code>/ayuda</code>
+            </p>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Duración vídeo por defecto (s)</span>
+                <input type="number" id="ch-telegram-video-sec" min="3" max="120" step="1" value="10">
+              </label>
+              <label class="form__field">
+                <span>Espera movimiento /movimiento (s)</span>
+                <input type="number" id="ch-telegram-motion-wait" min="5" max="300" step="1" value="60">
+              </label>
+            </div>
           </fieldset>
 
           <fieldset class="form__fieldset">
