@@ -230,6 +230,119 @@ body {
   max-height: none;
 }
 
+.snap-filter-label {
+  margin: 0.75rem 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.snap-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.snap-calendar__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.snap-calendar__label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.snap-calendar__weekdays,
+.snap-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+}
+
+.snap-calendar__weekdays span {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.snap-calendar__day {
+  aspect-ratio: 1;
+  min-height: 2.25rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.15rem;
+}
+
+.snap-calendar__day:hover:not(:disabled) {
+  background: var(--surface2);
+  border-color: var(--border);
+}
+
+.snap-calendar__day:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.snap-calendar__day--muted {
+  opacity: 0.45;
+}
+
+.snap-calendar__day--today {
+  border-color: var(--accent);
+}
+
+.snap-calendar__day--selected {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.snap-calendar__day--has-media {
+  font-weight: 600;
+}
+
+.snap-calendar__dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.snap-calendar__dot--video {
+  background: var(--warn);
+}
+
+.snap-calendar__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.snapshot__badge {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+}
+
 .layout--app {
   grid-template-rows: auto;
 }
@@ -619,6 +732,7 @@ body {
 .snapshots__empty { grid-column: 1 / -1; }
 
 .snapshot {
+  position: relative;
   background: var(--surface2);
   border-radius: 8px;
   overflow: hidden;

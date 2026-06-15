@@ -128,8 +128,35 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
 
     @app.get("/api/snapshots")
     def api_snapshots():
-        camera_id = request.args.get("camera_id")
-        return jsonify(manager.list_snapshots(config.web.snapshots_limit, camera_id))
+        camera_id = request.args.get("camera_id") or manager.get_active_camera_id()
+        date = request.args.get("date")
+        limit = config.web.snapshots_limit
+        if date:
+            limit = max(limit, 200)
+        result = manager.snapshot_service.list_snapshots(
+            store.list_cameras(),
+            camera_id=camera_id,
+            date=date,
+            limit=limit,
+        )
+        return jsonify(result)
+
+    @app.get("/api/snapshots/dates")
+    def api_snapshot_dates():
+        camera_id = request.args.get("camera_id") or manager.get_active_camera_id()
+        month = request.args.get("month")
+        if not month:
+            abort(400, description="Parámetro month obligatorio (YYYY-MM)")
+        try:
+            return jsonify(
+                manager.snapshot_service.list_media_dates(
+                    store.list_cameras(),
+                    camera_id=camera_id,
+                    month=month,
+                )
+            )
+        except ValueError as exc:
+            abort(400, description=str(exc))
 
     @app.get("/snapshots/<camera_id>/<path:filename>")
     def snapshot_file(camera_id: str, filename: str):

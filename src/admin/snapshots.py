@@ -28,16 +28,97 @@ def format_bytes(size: int) -> str:
 def _parse_filename(name: str) -> dict[str, str]:
     match = _FILENAME_RE.match(name)
     if not match:
-        return {"event_type": "", "timestamp": "", "media_type": ""}
+        return {"event_type": "", "timestamp": "", "media_type": "", "date": ""}
     date_part, time_part, event, ext = match.groups()
+    date_key = ""
+    iso = ""
     try:
         ts = datetime.strptime(f"{date_part}{time_part}", "%Y%m%d%H%M%S").replace(
             tzinfo=timezone.utc
         )
         iso = ts.isoformat(timespec="seconds")
+        date_key = ts.date().isoformat()
     except ValueError:
-        iso = ""
-    return {"event_type": event, "timestamp": iso, "media_type": ext.lower()}
+        pass
+    return {
+        "event_type": event,
+        "timestamp": iso,
+        "media_type": ext.lower(),
+        "date": date_key,
+    }
+
+
+def _parse_month_param(value: str | None) -> tuple[int, int] | None:
+    if not value or not re.fullmatch(r"\d{4}-\d{2}", value):
+        return None
+    year, month = value.split("-")
+    month_int = int(month)
+    if month_int < 1 or month_int > 12:
+        return None
+    return int(year), month_int
+
+
+def _parse_date_param(value: str | None) -> str | None:
+    if not value or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return None
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return value
+
+
+def _item_date_key(timestamp: str | None, mtime: str) -> str:
+    if timestamp:
+        return timestamp[:10]
+    return mtime[:10] if mtime else ""
+
+
+def _collect_media_items(
+    cameras: list[Camera],
+    snapshot_root: Path,
+    *,
+    camera_id: str | None = None,
+) -> list[dict]:
+    names = {camera.id: camera.name for camera in cameras}
+    items: list[dict] = []
+
+    for cam_id, directory in _camera_dirs(snapshot_root, camera_id):
+        if not directory.exists():
+            continue
+        for path in sorted(
+            (*directory.glob("*.jpg"), *directory.glob("*.mp4")),
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        ):
+            stat = path.stat()
+            meta = _parse_filename(path.name)
+            suffix = path.suffix.lower()
+            mtime = datetime.fromtimestamp(
+                stat.st_mtime, tz=timezone.utc
+            ).isoformat(timespec="seconds")
+            timestamp = meta["timestamp"] or None
+            items.append(
+                {
+                    "camera_id": cam_id,
+                    "camera_name": names.get(cam_id, cam_id),
+                    "filename": path.name,
+                    "name": path.name,
+                    "url": f"/snapshots/{cam_id}/{path.name}",
+                    "media_type": meta.get("media_type") or suffix.lstrip("."),
+                    "kind": "video"
+                    if (meta.get("media_type") or suffix.lstrip(".")) == "mp4"
+                    else "image",
+                    "size_bytes": stat.st_size,
+                    "size_label": format_bytes(stat.st_size),
+                    "mtime": mtime,
+                    "event_type": meta["event_type"],
+                    "timestamp": timestamp,
+                    "date": meta["date"] or _item_date_key(timestamp, mtime),
+                }
+            )
+    items.sort(key=lambda row: row["mtime"], reverse=True)
+    return items
 
 
 def _camera_dirs(snapshot_root: Path, camera_id: str | None) -> list[tuple[str, Path]]:
@@ -75,42 +156,61 @@ class SnapshotService:
         camera_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        date: str | None = None,
     ) -> dict:
-        names = {camera.id: camera.name for camera in cameras}
-        items: list[dict] = []
+        items = _collect_media_items(
+            cameras, self.snapshot_root, camera_id=camera_id
+        )
+        date_filter = _parse_date_param(date)
+        if date_filter:
+            items = [item for item in items if item["date"] == date_filter]
 
-        for cam_id, directory in _camera_dirs(self.snapshot_root, camera_id):
-            if not directory.exists():
-                continue
-            for path in sorted(
-                (*directory.glob("*.jpg"), *directory.glob("*.mp4")),
-                key=lambda item: item.stat().st_mtime,
-                reverse=True,
-            ):
-                stat = path.stat()
-                meta = _parse_filename(path.name)
-                suffix = path.suffix.lower()
-                items.append(
-                    {
-                        "camera_id": cam_id,
-                        "camera_name": names.get(cam_id, cam_id),
-                        "filename": path.name,
-                        "url": f"/snapshots/{cam_id}/{path.name}",
-                        "media_type": meta.get("media_type") or suffix.lstrip("."),
-                        "size_bytes": stat.st_size,
-                        "size_label": format_bytes(stat.st_size),
-                        "mtime": datetime.fromtimestamp(
-                            stat.st_mtime, tz=timezone.utc
-                        ).isoformat(timespec="seconds"),
-                        "event_type": meta["event_type"],
-                        "timestamp": meta["timestamp"] or None,
-                    }
-                )
-
-        items.sort(key=lambda row: row["mtime"], reverse=True)
         total = len(items)
         page = items[offset : offset + limit]
-        return {"total": total, "offset": offset, "limit": limit, "items": page}
+        return {
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "date": date_filter,
+            "items": page,
+        }
+
+    def list_media_dates(
+        self,
+        cameras: list[Camera],
+        *,
+        camera_id: str | None = None,
+        month: str | None = None,
+    ) -> dict:
+        parsed = _parse_month_param(month)
+        if not parsed:
+            raise ValueError("month debe ser YYYY-MM")
+        year, month_num = parsed
+        month_key = f"{year:04d}-{month_num:02d}"
+        prefix = f"{month_key}-"
+
+        items = _collect_media_items(
+            cameras, self.snapshot_root, camera_id=camera_id
+        )
+        day_stats: dict[str, dict[str, int]] = {}
+        for item in items:
+            day = item.get("date") or ""
+            if not day.startswith(prefix):
+                continue
+            stats = day_stats.setdefault(
+                day, {"count": 0, "photos": 0, "videos": 0}
+            )
+            stats["count"] += 1
+            if item["kind"] == "video":
+                stats["videos"] += 1
+            else:
+                stats["photos"] += 1
+
+        days = [
+            {"date": day, **stats}
+            for day, stats in sorted(day_stats.items(), reverse=True)
+        ]
+        return {"month": month_key, "days": days}
 
     def stats(self, cameras: list[Camera]) -> dict:
         listing = self.list_snapshots(cameras, limit=1_000_000)

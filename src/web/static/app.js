@@ -274,25 +274,154 @@ function renderAlerts(alerts) {
     .join("");
 }
 
+let selectedSnapshotDate = null;
+let calendarView = new Date();
+
+const MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatSnapshotTime(item) {
+  const raw = item.timestamp || item.mtime;
+  if (!raw) return item.name;
+  try {
+    return new Date(raw).toLocaleString("es", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return item.name;
+  }
+}
+
 function renderSnapshots(items) {
   const grid = $("snapshots-grid");
+  const label = $("snap-filter-label");
+  if (label) {
+    if (selectedSnapshotDate) {
+      const count = items.length;
+      label.textContent = `${count} archivo(s) del ${selectedSnapshotDate} (fotos y grabaciones)`;
+    } else {
+      label.textContent = "Mostrando capturas recientes";
+    }
+  }
   if (!items.length) {
-    grid.innerHTML = '<p class="muted snapshots__empty">No hay capturas guardadas</p>';
+    grid.innerHTML = '<p class="muted snapshots__empty">No hay capturas para esta búsqueda</p>';
     return;
   }
   grid.innerHTML = items
-    .map(
-      (s) => `
+    .map((s) => {
+      const isVideo = s.kind === "video" || s.media_type === "mp4";
+      const badge = isVideo ? "▶ Vídeo" : "Foto";
+      return `
     <a class="snapshot" href="${s.url}" target="_blank" rel="noopener">
+      <span class="snapshot__badge">${badge}</span>
       ${
-        s.kind === "video"
-          ? `<video src="${s.url}" muted playsinline></video>`
-          : `<img src="${s.url}" alt="${s.name}" loading="lazy">`
+        isVideo
+          ? `<video src="${s.url}" muted playsinline preload="metadata"></video>`
+          : `<img src="${s.url}" alt="${s.name || s.filename}" loading="lazy">`
       }
-      <span>${s.name}</span>
-    </a>`
-    )
+      <span>${formatSnapshotTime(s)}</span>
+    </a>`;
+    })
     .join("");
+}
+
+async function loadSnapshotDates() {
+  const month = monthKey(calendarView);
+  try {
+    const res = await fetch(`${apiUrl("/api/snapshots/dates")}&month=${month}`);
+    if (!res.ok) return {};
+    const data = await res.json();
+    const map = {};
+    (data.days || []).forEach((day) => {
+      map[day.date] = day;
+    });
+    return map;
+  } catch (err) {
+    console.warn("Calendar dates error:", err);
+    return {};
+  }
+}
+
+function renderSnapshotCalendar(daysMap) {
+  const grid = $("snap-calendar-grid");
+  const label = $("cal-month-label");
+  if (!grid || !label) return;
+
+  const year = calendarView.getFullYear();
+  const month = calendarView.getMonth();
+  label.textContent = `${MONTH_NAMES[month]} ${year}`;
+
+  const firstDay = new Date(year, month, 1);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  grid.innerHTML = "";
+  for (let i = 0; i < startOffset; i += 1) {
+    const pad = document.createElement("button");
+    pad.type = "button";
+    pad.className = "snap-calendar__day snap-calendar__day--muted";
+    pad.disabled = true;
+    pad.textContent = "";
+    grid.appendChild(pad);
+  }
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const stats = daysMap[dateStr];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "snap-calendar__day";
+    const dayNum = document.createElement("span");
+    dayNum.textContent = String(day);
+    btn.appendChild(dayNum);
+    if (stats) {
+      btn.classList.add("snap-calendar__day--has-media");
+      btn.title = `${stats.count} archivo(s): ${stats.photos} foto(s), ${stats.videos} vídeo(s)`;
+      const dot = document.createElement("span");
+      dot.className = "snap-calendar__dot" + (stats.videos > 0 ? " snap-calendar__dot--video" : "");
+      btn.appendChild(dot);
+    }
+    if (dateStr === todayKey) {
+      btn.classList.add("snap-calendar__day--today");
+    }
+    if (dateStr === selectedSnapshotDate) {
+      btn.classList.add("snap-calendar__day--selected");
+    }
+    btn.addEventListener("click", () => {
+      selectedSnapshotDate = dateStr;
+      refreshSnapshotsPanel();
+    });
+    grid.appendChild(btn);
+  }
+}
+
+async function refreshSnapshotsPanel() {
+  await Promise.all([loadSnapshotDates().then(renderSnapshotCalendar), loadSnapshots()]);
+}
+
+async function loadSnapshots() {
+  try {
+    let url = apiUrl("/api/snapshots");
+    if (selectedSnapshotDate) {
+      url += `&date=${encodeURIComponent(selectedSnapshotDate)}`;
+    }
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+    renderSnapshots(data.items || []);
+  } catch (err) {
+    console.warn("Snapshots error:", err);
+  }
 }
 
 async function poll() {
@@ -308,15 +437,6 @@ async function poll() {
   }
 }
 
-async function loadSnapshots() {
-  try {
-    const res = await fetch(apiUrl("/api/snapshots"));
-    if (res.ok) renderSnapshots(await res.json());
-  } catch (err) {
-    console.warn("Snapshots error:", err);
-  }
-}
-
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopLiveFeed();
@@ -329,7 +449,22 @@ $("camera-select").addEventListener("change", (e) => {
   switchCamera(e.target.value);
 });
 
-$("refresh-snapshots").addEventListener("click", loadSnapshots);
+$("refresh-snapshots").addEventListener("click", () => refreshSnapshotsPanel());
+
+$("cal-prev").addEventListener("click", () => {
+  calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth() - 1, 1);
+  refreshSnapshotsPanel();
+});
+
+$("cal-next").addEventListener("click", () => {
+  calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth() + 1, 1);
+  refreshSnapshotsPanel();
+});
+
+$("cal-clear").addEventListener("click", () => {
+  selectedSnapshotDate = null;
+  refreshSnapshotsPanel();
+});
 
 function openSideMenu() {
   $("side-menu").classList.add("is-open");
@@ -338,7 +473,7 @@ function openSideMenu() {
   $("menu-backdrop").setAttribute("aria-hidden", "false");
   $("menu-toggle").setAttribute("aria-expanded", "true");
   document.body.classList.add("menu-open");
-  loadSnapshots();
+  refreshSnapshotsPanel();
   poll();
 }
 
@@ -360,7 +495,7 @@ function switchMenuPanel(panelId) {
   $("menu-panel-snapshots").classList.toggle("hidden", panelId !== "snapshots");
   $("menu-panel-alerts").classList.toggle("hidden", panelId !== "alerts");
   if (panelId === "snapshots") {
-    loadSnapshots();
+    refreshSnapshotsPanel();
   } else {
     poll();
   }
@@ -399,8 +534,11 @@ $("btn-reset-heatmap").addEventListener("click", async () => {
 loadCameras().then(() => {
   startLiveFeed();
   poll();
-  loadSnapshots();
 });
 setInterval(poll, 2000);
-setInterval(loadSnapshots, 15000);
+setInterval(() => {
+  if ($("side-menu").classList.contains("is-open") && !$("menu-panel-snapshots").classList.contains("hidden")) {
+    refreshSnapshotsPanel();
+  }
+}, 15000);
 setInterval(loadCameras, 10000);

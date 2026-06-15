@@ -27,9 +27,22 @@
       <button type="button" class="side-menu__tab" data-menu-panel="alerts" role="tab" aria-selected="false">Alertas</button>
     </nav>
     <div id="menu-panel-snapshots" class="side-menu__panel" role="tabpanel">
-      <div class="side-menu__toolbar">
-        <button id="refresh-snapshots" class="btn btn--sm" type="button">Actualizar</button>
+      <div class="snap-calendar">
+        <div class="snap-calendar__nav">
+          <button type="button" id="cal-prev" class="btn btn--icon" aria-label="Mes anterior">‹</button>
+          <span id="cal-month-label" class="snap-calendar__label"></span>
+          <button type="button" id="cal-next" class="btn btn--icon" aria-label="Mes siguiente">›</button>
+        </div>
+        <div class="snap-calendar__weekdays" aria-hidden="true">
+          <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+        </div>
+        <div id="snap-calendar-grid" class="snap-calendar__grid"></div>
+        <div class="snap-calendar__footer">
+          <button type="button" id="cal-clear" class="btn btn--sm">Ver todas</button>
+          <button id="refresh-snapshots" class="btn btn--sm" type="button">Actualizar</button>
+        </div>
       </div>
+      <p id="snap-filter-label" class="muted snap-filter-label">Mostrando capturas recientes</p>
       <div id="snapshots-grid" class="snapshots snapshots--menu">
         <p class="muted snapshots__empty">No hay capturas guardadas</p>
       </div>
