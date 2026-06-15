@@ -206,31 +206,42 @@ class CameraWorker:
         snapshot_name = None
         snapshot_path = None
         detection = self.store.build_detection_config(self.app_config)
-        snapshot_event = (
-            _pick_snapshot_event(
-                events,
-                detection.snapshot_event_types,
-                detection.snapshot_min_persons,
-            )
-            if detection.save_snapshots
-            else None
-        )
-        if snapshot_event and self._snapshot_cooldown_ok(detection.snapshot_cooldown_sec):
-            snapshot_path = save_snapshot(frame, self.snapshot_dir, snapshot_event)
-            snapshot_name = snapshot_path.name
-            self._last_snapshot_at = time.monotonic()
 
         rules = self.store.matching_rules(
             self.camera.id,
             primary.event_type.value,
             primary.person_count,
         )
+        pending_rules = [
+            rule
+            for rule in rules
+            if self._should_notify_rule(rule.id, rule.cooldown_sec)
+        ]
+
+        if detection.save_snapshots:
+            snapshot_event = _pick_snapshot_event(
+                events,
+                detection.snapshot_event_types,
+                detection.snapshot_min_persons,
+            )
+            if snapshot_event and self._snapshot_cooldown_ok(
+                detection.snapshot_cooldown_sec
+            ):
+                snapshot_path = save_snapshot(
+                    frame, self.snapshot_dir, snapshot_event
+                )
+                snapshot_name = snapshot_path.name
+                self._last_snapshot_at = time.monotonic()
+            elif pending_rules and snapshot_path is None:
+                snapshot_path = save_snapshot(
+                    frame, self.snapshot_dir, primary
+                )
+                snapshot_name = snapshot_path.name
+                self._last_snapshot_at = time.monotonic()
 
         notified = False
-        if rules:
-            for rule in rules:
-                if not self._should_notify_rule(rule.id, rule.cooldown_sec):
-                    continue
+        if pending_rules:
+            for rule in pending_rules:
                 logger.info(
                     "Alerta [%s] regla '%s': %s",
                     self.camera.name,
@@ -246,6 +257,12 @@ class CameraWorker:
                 )
                 self._rule_cooldowns[rule.id] = time.monotonic()
                 notified = True
+        elif rules:
+            logger.info(
+                "Alerta [%s]: %s (reglas en cooldown, no notificado)",
+                self.camera.name,
+                primary.message,
+            )
         else:
             logger.info(
                 "Alerta [%s]: %s (sin regla coincidente, no notificado)",
