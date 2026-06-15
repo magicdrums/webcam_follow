@@ -1,13 +1,16 @@
 const $ = (id) => document.getElementById(id);
 
 let activeCameraId = null;
-let frameObjectUrl = null;
 let frameLoopActive = false;
 let frameTimer = null;
 let frameInFlight = false;
+let hasLiveFrame = false;
+let frameFailStreak = 0;
+let canvasCtx = null;
 
-/** Intervalo entre frames (~8 FPS en móvil, equilibrio fluidez/ancho de banda). */
-const FRAME_INTERVAL_MS = 120;
+/** ~4 FPS: fluido en móvil sin saturar red ni provocar parpadeos. */
+const FRAME_INTERVAL_MS = 250;
+const FRAME_INTERVAL_MAX_MS = 1200;
 
 function formatTime(iso) {
   if (!iso) return "—";
@@ -23,6 +26,24 @@ function apiUrl(path, cameraId) {
   return cid ? `${path}?camera_id=${encodeURIComponent(cid)}` : path;
 }
 
+function getCanvasContext() {
+  if (!canvasCtx) {
+    const canvas = $("live-feed");
+    canvasCtx = canvas.getContext("2d", { alpha: false });
+  }
+  return canvasCtx;
+}
+
+function showLiveFrame() {
+  $("video-wrap").classList.add("is-live");
+  hasLiveFrame = true;
+}
+
+function showPlaceholder() {
+  $("video-wrap").classList.remove("is-live");
+  hasLiveFrame = false;
+}
+
 function stopLiveFeed() {
   frameLoopActive = false;
   if (frameTimer) {
@@ -31,14 +52,46 @@ function stopLiveFeed() {
   }
 }
 
-function setFrameBlob(blob) {
-  const feed = $("live-feed");
-  const url = URL.createObjectURL(blob);
-  feed.src = url;
-  if (frameObjectUrl) {
-    URL.revokeObjectURL(frameObjectUrl);
+async function drawFrameBlob(blob) {
+  const canvas = $("live-feed");
+  const wrap = $("video-wrap");
+  const ctx = getCanvasContext();
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch (err) {
+    console.warn("Frame decode error:", err);
+    return false;
   }
-  frameObjectUrl = url;
+
+  const cw = wrap.clientWidth || bitmap.width;
+  const ch = wrap.clientHeight || bitmap.height;
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+
+  const scale = Math.min(cw / bitmap.width, ch / bitmap.height);
+  const dw = bitmap.width * scale;
+  const dh = bitmap.height * scale;
+  const dx = (cw - dw) / 2;
+  const dy = (ch - dh) / 2;
+
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.drawImage(bitmap, dx, dy, dw, dh);
+  bitmap.close();
+  showLiveFrame();
+  frameFailStreak = 0;
+  return true;
+}
+
+function nextFrameDelay() {
+  if (frameFailStreak === 0) {
+    return FRAME_INTERVAL_MS;
+  }
+  const backoff = FRAME_INTERVAL_MS * Math.min(frameFailStreak, 4);
+  return Math.min(backoff, FRAME_INTERVAL_MAX_MS);
 }
 
 async function pollFrameOnce() {
@@ -50,14 +103,15 @@ async function pollFrameOnce() {
       headers: { Accept: "image/jpeg" },
     });
     if (res.ok) {
-      setFrameBlob(await res.blob());
-      $("video-placeholder").style.display = "none";
-      $("live-feed").style.display = "block";
-    } else if (res.status === 503 || res.status === 404) {
-      $("video-placeholder").style.display = "flex";
-      $("live-feed").style.display = "none";
+      await drawFrameBlob(await res.blob());
+    } else if (res.status === 404) {
+      frameFailStreak += 1;
+      if (!hasLiveFrame) {
+        showPlaceholder();
+      }
     }
   } catch (err) {
+    frameFailStreak += 1;
     console.warn("Frame error:", err);
   } finally {
     frameInFlight = false;
@@ -71,20 +125,23 @@ function scheduleFramePoll() {
     const t0 = performance.now();
     await pollFrameOnce();
     const elapsed = performance.now() - t0;
-    const delay = Math.max(40, FRAME_INTERVAL_MS - elapsed);
+    const delay = Math.max(50, nextFrameDelay() - elapsed);
     frameTimer = setTimeout(tick, delay);
   };
   tick();
 }
 
 function startLiveFeed() {
-  stopLiveFeed();
+  if (frameLoopActive) return;
   if (!activeCameraId) return;
   frameLoopActive = true;
+  frameFailStreak = 0;
   scheduleFramePoll();
 }
 
 function reloadVideoFeed() {
+  stopLiveFeed();
+  showPlaceholder();
   startLiveFeed();
 }
 
@@ -101,7 +158,10 @@ async function loadCameras() {
     .join("");
 
   const active = cameras.find((c) => c.active) || cameras[0];
-  if (active) {
+  if (active && active.id !== activeCameraId) {
+    activeCameraId = active.id;
+    reloadVideoFeed();
+  } else if (active) {
     activeCameraId = active.id;
   }
 }
@@ -149,23 +209,8 @@ function updateStatus(data) {
     tags.appendChild(span);
   });
 
-  const placeholder = $("video-placeholder");
-  const feed = $("live-feed");
-  if (connected) {
-    if (!frameLoopActive) {
-      startLiveFeed();
-    }
-    placeholder.style.display = feed.src ? "none" : "flex";
-    feed.style.display = feed.src ? "block" : "none";
-  } else {
-    stopLiveFeed();
-    placeholder.style.display = "flex";
-    feed.style.display = "none";
-    feed.removeAttribute("src");
-    if (frameObjectUrl) {
-      URL.revokeObjectURL(frameObjectUrl);
-      frameObjectUrl = null;
-    }
+  if (activeCameraId && !frameLoopActive) {
+    startLiveFeed();
   }
 
   renderHeatmap(data);

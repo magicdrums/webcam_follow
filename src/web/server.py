@@ -73,16 +73,17 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         frame = manager.get_jpeg_frame(camera_id)
         if not frame:
             abort(404, description="Sin frame disponible")
+        headers = {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
         if status and not status.connected:
-            abort(503, description="Stream desconectado o frame obsoleto")
+            headers["X-Frame-Stale"] = "1"
         return Response(
             frame,
             mimetype="image/jpeg",
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
+            headers=headers,
         )
 
     @app.get("/api/cameras")

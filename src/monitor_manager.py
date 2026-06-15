@@ -123,7 +123,7 @@ class CameraWorker:
             if (
                 status.connected
                 and self._last_frame_mono > 0
-                and time.monotonic() - self._last_frame_mono > 10.0
+                and time.monotonic() - self._last_frame_mono > 20.0
             ):
                 status.connected = False
             return status

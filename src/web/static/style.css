@@ -311,11 +311,27 @@ body {
   aspect-ratio: 4/3;
 }
 
-.video-wrap img {
+.video-wrap img,
+.video-wrap canvas.live-feed {
   width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
+}
+
+.video-wrap canvas.live-feed {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.video-wrap.is-live canvas.live-feed {
+  opacity: 1;
+}
+
+.video-wrap.is-live .video-placeholder {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .video-placeholder {
