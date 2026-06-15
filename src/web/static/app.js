@@ -264,18 +264,39 @@ function renderAlerts(alerts) {
   }
   list.innerHTML = alerts
     .map(
-      (a) => `
+      (a, index) => `
     <li>
       <div class="alert__type">${(a.camera_name || "Cámara")} · ${a.event_type.replace(/_/g, " ")}</div>
       <div>${a.message}</div>
       <div class="alert__time">${formatTime(a.timestamp)}</div>
+      ${
+        a.snapshot
+          ? `<button type="button" class="btn btn--sm alert__media-btn" data-alert-index="${index}">Ver captura</button>`
+          : ""
+      }
     </li>`
     )
     .join("");
+
+  list.querySelectorAll("[data-alert-index]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const alert = alerts[parseInt(btn.dataset.alertIndex, 10)];
+      if (!alert?.snapshot) return;
+      openMediaViewerItem({
+        url: `/snapshots/${alert.camera_id}/${alert.snapshot}`,
+        filename: alert.snapshot,
+        name: alert.snapshot,
+        timestamp: alert.timestamp,
+        kind: alert.snapshot.endsWith(".mp4") ? "video" : "photo",
+      });
+    });
+  });
 }
 
 let selectedSnapshotDate = null;
 let calendarView = new Date();
+let currentSnapshotItems = [];
+let mediaViewerIndex = -1;
 
 const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -301,7 +322,12 @@ function formatSnapshotTime(item) {
   }
 }
 
+function isVideoItem(item) {
+  return item.kind === "video" || item.media_type === "mp4";
+}
+
 function renderSnapshots(items) {
+  currentSnapshotItems = items;
   const grid = $("snapshots-grid");
   const label = $("snap-filter-label");
   if (label) {
@@ -317,11 +343,11 @@ function renderSnapshots(items) {
     return;
   }
   grid.innerHTML = items
-    .map((s) => {
-      const isVideo = s.kind === "video" || s.media_type === "mp4";
+    .map((s, index) => {
+      const isVideo = isVideoItem(s);
       const badge = isVideo ? "▶ Vídeo" : "Foto";
       return `
-    <a class="snapshot" href="${s.url}" target="_blank" rel="noopener">
+    <button type="button" class="snapshot snapshot--btn" data-snapshot-index="${index}">
       <span class="snapshot__badge">${badge}</span>
       ${
         isVideo
@@ -329,9 +355,70 @@ function renderSnapshots(items) {
           : `<img src="${s.url}" alt="${s.name || s.filename}" loading="lazy">`
       }
       <span>${formatSnapshotTime(s)}</span>
-    </a>`;
+    </button>`;
     })
     .join("");
+}
+
+function closeMediaViewer() {
+  const viewer = $("media-viewer");
+  const content = $("media-viewer-content");
+  const video = content.querySelector("video");
+  if (video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+  content.innerHTML = "";
+  viewer.classList.add("hidden");
+  viewer.setAttribute("aria-hidden", "true");
+  mediaViewerIndex = -1;
+  document.body.classList.remove("viewer-open");
+}
+
+function showMediaViewerAt(index) {
+  if (!currentSnapshotItems.length || index < 0 || index >= currentSnapshotItems.length) {
+    return;
+  }
+
+  mediaViewerIndex = index;
+  const item = currentSnapshotItems[index];
+  const isVideo = isVideoItem(item);
+  const viewer = $("media-viewer");
+  const content = $("media-viewer-content");
+  const title = $("media-viewer-title");
+  const meta = $("media-viewer-meta");
+  const download = $("media-viewer-download");
+
+  title.textContent = isVideo ? "Grabación" : "Captura";
+  meta.textContent = `${formatSnapshotTime(item)} · ${item.filename || item.name || ""}`;
+  download.href = item.url;
+  download.download = item.filename || item.name || "captura";
+
+  content.innerHTML = isVideo
+    ? `<video class="media-viewer__video" src="${item.url}" controls autoplay playsinline></video>`
+    : `<img class="media-viewer__image" src="${item.url}" alt="${item.filename || item.name || "Captura"}">`;
+
+  $("media-viewer-prev").disabled = index <= 0;
+  $("media-viewer-next").disabled = index >= currentSnapshotItems.length - 1;
+
+  viewer.classList.remove("hidden");
+  viewer.setAttribute("aria-hidden", "false");
+  document.body.classList.add("viewer-open");
+}
+
+function openMediaViewerItem(item) {
+  currentSnapshotItems = [item];
+  showMediaViewerAt(0);
+}
+
+function openMediaViewer(index) {
+  showMediaViewerAt(index);
+}
+
+function stepMediaViewer(delta) {
+  if (mediaViewerIndex < 0) return;
+  showMediaViewerAt(mediaViewerIndex + delta);
 }
 
 async function loadSnapshotDates() {
@@ -449,6 +536,17 @@ $("camera-select").addEventListener("change", (e) => {
   switchCamera(e.target.value);
 });
 
+$("snapshots-grid").addEventListener("click", (e) => {
+  const card = e.target.closest("[data-snapshot-index]");
+  if (!card) return;
+  openMediaViewer(parseInt(card.dataset.snapshotIndex, 10));
+});
+
+$("media-viewer-close").addEventListener("click", closeMediaViewer);
+$("media-viewer-backdrop").addEventListener("click", closeMediaViewer);
+$("media-viewer-prev").addEventListener("click", () => stepMediaViewer(-1));
+$("media-viewer-next").addEventListener("click", () => stepMediaViewer(1));
+
 $("refresh-snapshots").addEventListener("click", () => refreshSnapshotsPanel());
 
 $("cal-prev").addEventListener("click", () => {
@@ -478,6 +576,7 @@ function openSideMenu() {
 }
 
 function closeSideMenu() {
+  closeMediaViewer();
   $("side-menu").classList.remove("is-open");
   $("side-menu").setAttribute("aria-hidden", "true");
   $("menu-backdrop").classList.add("hidden");
@@ -517,8 +616,25 @@ document.querySelectorAll(".side-menu__tab").forEach((tab) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && $("side-menu").classList.contains("is-open")) {
-    closeSideMenu();
+  const viewerOpen = !$("media-viewer").classList.contains("hidden");
+  if (e.key === "Escape") {
+    if (viewerOpen) {
+      closeMediaViewer();
+      e.preventDefault();
+      return;
+    }
+    if ($("side-menu").classList.contains("is-open")) {
+      closeSideMenu();
+    }
+    return;
+  }
+  if (!viewerOpen) return;
+  if (e.key === "ArrowLeft") {
+    stepMediaViewer(-1);
+    e.preventDefault();
+  } else if (e.key === "ArrowRight") {
+    stepMediaViewer(1);
+    e.preventDefault();
   }
 });
 

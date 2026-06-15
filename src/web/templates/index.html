@@ -126,6 +126,27 @@
     </aside>
   </main>
 
+  <div id="media-viewer" class="media-viewer hidden" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="media-viewer-title">
+    <div class="media-viewer__backdrop" id="media-viewer-backdrop"></div>
+    <div class="media-viewer__panel">
+      <header class="media-viewer__head">
+        <div class="media-viewer__info">
+          <p id="media-viewer-title" class="media-viewer__title">Captura</p>
+          <p id="media-viewer-meta" class="media-viewer__meta muted"></p>
+        </div>
+        <div class="media-viewer__actions">
+          <a id="media-viewer-download" class="btn btn--sm" href="#" download>Descargar</a>
+          <button type="button" id="media-viewer-close" class="btn btn--icon" aria-label="Cerrar visor">×</button>
+        </div>
+      </header>
+      <div class="media-viewer__stage">
+        <button type="button" id="media-viewer-prev" class="media-viewer__nav" aria-label="Anterior">‹</button>
+        <div id="media-viewer-content" class="media-viewer__content"></div>
+        <button type="button" id="media-viewer-next" class="media-viewer__nav" aria-label="Siguiente">›</button>
+      </div>
+    </div>
+  </div>
+
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
