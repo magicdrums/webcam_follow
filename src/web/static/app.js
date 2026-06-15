@@ -217,6 +217,13 @@ function updateStatus(data) {
 }
 
 function renderHeatmap(data) {
+  const panel = $("heatmap-panel");
+  const heatmapOn = data.heatmap_enabled !== false;
+  panel.classList.toggle("hidden", !heatmapOn);
+  if (!heatmapOn) {
+    return;
+  }
+
   const zones = data.hot_zones || [];
   const list = $("hot-zones-list");
   if (!zones.length) {

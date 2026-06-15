@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from src.admin.models import YoloSettings
+from src.admin.models import DEFAULT_SNAPSHOT_EVENT_TYPES
 from src.config import DEFAULT_DETECT_CLASSES, DetectionConfig, _parse_detect_classes
 
 # Dataset COCO (80 clases) — IDs estándar YOLOv8
@@ -95,6 +95,9 @@ def build_detection_config(
         yolo_confidence=settings.yolo_confidence,
         detection_interval_sec=settings.detection_interval_sec,
         save_snapshots=settings.save_snapshots,
+        snapshot_event_types=tuple(settings.snapshot_event_types),
+        snapshot_cooldown_sec=settings.snapshot_cooldown_sec,
+        snapshot_min_persons=settings.snapshot_min_persons,
         yolo_model=settings.yolo_model,
         yolo_device=settings.yolo_device,
         yolo_imgsz=settings.yolo_imgsz,
@@ -123,6 +126,9 @@ def merge_yolo_updates(current: YoloSettings, payload: dict) -> YoloSettings:
         "min_motion_area",
         "detection_interval_sec",
         "save_snapshots",
+        "snapshot_event_types",
+        "snapshot_cooldown_sec",
+        "snapshot_min_persons",
         "heatmap_enabled",
         "heatmap_opacity",
         "heatmap_decay",

@@ -39,6 +39,23 @@ def _pick_primary_event(events: list[DetectionEvent]) -> DetectionEvent:
     return max(events, key=lambda event: PRIORITY.get(event.event_type, 0))
 
 
+def _pick_snapshot_event(
+    events: list[DetectionEvent],
+    allowed_types: tuple[str, ...],
+    min_persons: int,
+) -> DetectionEvent | None:
+    allowed = set(allowed_types)
+    qualifying = [
+        event
+        for event in events
+        if event.event_type.value in allowed
+        and (min_persons <= 0 or event.person_count >= min_persons)
+    ]
+    if not qualifying:
+        return None
+    return max(qualifying, key=lambda event: PRIORITY.get(event.event_type, 0))
+
+
 @dataclass
 class LiveStatus:
     camera_id: str = ""
@@ -58,6 +75,7 @@ class LiveStatus:
     hot_zones: list[dict] = field(default_factory=list)
     motion_prediction: dict = field(default_factory=dict)
     heatmap_peak: float = 0.0
+    heatmap_enabled: bool = True
 
 
 @dataclass
@@ -93,6 +111,7 @@ class CameraWorker:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._rule_cooldowns: dict[str, float] = {}
+        self._last_snapshot_at = 0.0
         self._settings_version = ""
         self._motion_analytics = MotionAnalytics()
         self._last_frame_mono = 0.0
@@ -168,6 +187,12 @@ class CameraWorker:
         elapsed = time.monotonic() - self._rule_cooldowns.get(rule_id, 0.0)
         return elapsed >= cooldown_sec
 
+    def _snapshot_cooldown_ok(self, cooldown_sec: float) -> bool:
+        return time.monotonic() - self._last_snapshot_at >= cooldown_sec
+
+    def _show_heatmap(self, yolo_settings) -> bool:
+        return bool(yolo_settings.heatmap_enabled and self.camera.heatmap_enabled)
+
     def _handle_events(
         self,
         events: list[DetectionEvent],
@@ -181,9 +206,19 @@ class CameraWorker:
         snapshot_name = None
         snapshot_path = None
         detection = self.store.build_detection_config(self.app_config)
-        if detection.save_snapshots:
-            snapshot_path = save_snapshot(frame, self.snapshot_dir, primary)
+        snapshot_event = (
+            _pick_snapshot_event(
+                events,
+                detection.snapshot_event_types,
+                detection.snapshot_min_persons,
+            )
+            if detection.save_snapshots
+            else None
+        )
+        if snapshot_event and self._snapshot_cooldown_ok(detection.snapshot_cooldown_sec):
+            snapshot_path = save_snapshot(frame, self.snapshot_dir, snapshot_event)
             snapshot_name = snapshot_path.name
+            self._last_snapshot_at = time.monotonic()
 
         rules = self.store.matching_rules(
             self.camera.id,
@@ -287,6 +322,7 @@ class CameraWorker:
             hot_zones=(motion_snapshot or {}).get("hot_zones", []),
             motion_prediction=(motion_snapshot or {}).get("prediction", {}),
             heatmap_peak=(motion_snapshot or {}).get("peak_intensity", 0.0),
+            heatmap_enabled=self.camera.heatmap_enabled,
         )
         with self._lock:
             self._latest_jpeg = encoded.tobytes()
@@ -354,6 +390,7 @@ class CameraWorker:
                     detection = self.store.build_detection_config(self.app_config)
                     detector = self._sync_detector(detector, detection)
                     yolo_settings = self.store.get_yolo_settings()
+                    show_heatmap = self._show_heatmap(yolo_settings)
 
                     now = time.monotonic()
                     frame_count, fps_timer, fps = self._update_fps(
@@ -365,21 +402,19 @@ class CameraWorker:
                     if now - last_detection < detection.detection_interval_sec:
                         display = frame
                         snap_dict = self._motion_analytics.snapshot.to_dict()
-                        if (
-                            yolo_settings.heatmap_enabled
-                            or yolo_settings.motion_prediction_enabled
-                        ):
+                        if show_heatmap or yolo_settings.motion_prediction_enabled:
                             self._motion_analytics.update(
                                 None,
                                 frame.shape,
                                 decay=yolo_settings.heatmap_decay,
                                 enable_prediction=False,
+                                enable_heatmap=show_heatmap,
                             )
                             snap_dict = self._motion_analytics.snapshot.to_dict()
                             display = self._motion_analytics.render_overlay(
                                 frame,
                                 opacity=yolo_settings.heatmap_opacity,
-                                show_heatmap=yolo_settings.heatmap_enabled,
+                                show_heatmap=show_heatmap,
                                 show_prediction=yolo_settings.motion_prediction_enabled,
                             )
                         self._publish_frame(
@@ -397,21 +432,20 @@ class CameraWorker:
                     events, annotated, motion_mask = detector.analyze(frame)
 
                     yolo_settings = self.store.get_yolo_settings()
+                    show_heatmap = self._show_heatmap(yolo_settings)
                     analytics_snap = self._motion_analytics.update(
                         motion_mask,
                         frame.shape,
                         decay=yolo_settings.heatmap_decay,
                         enable_prediction=yolo_settings.motion_prediction_enabled,
+                        enable_heatmap=show_heatmap,
                     )
-                    if (
-                        yolo_settings.heatmap_enabled
-                        or yolo_settings.motion_prediction_enabled
-                    ):
+                    if show_heatmap or yolo_settings.motion_prediction_enabled:
                         annotated = self._motion_analytics.render_overlay(
                             annotated,
                             opacity=yolo_settings.heatmap_opacity,
                             prediction=analytics_snap.prediction,
-                            show_heatmap=yolo_settings.heatmap_enabled,
+                            show_heatmap=show_heatmap,
                             show_prediction=yolo_settings.motion_prediction_enabled,
                         )
 

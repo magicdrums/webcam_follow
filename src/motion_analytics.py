@@ -94,25 +94,28 @@ class MotionAnalytics:
         *,
         decay: float | None = None,
         enable_prediction: bool = True,
+        enable_heatmap: bool = True,
     ) -> MotionAnalyticsSnapshot:
         decay_rate = decay if decay is not None else self.decay
-        self._grid *= decay_rate
+        if enable_heatmap:
+            self._grid *= decay_rate
 
         if motion_mask is not None and motion_mask.size > 0:
-            small = cv2.resize(
-                motion_mask,
-                (self.GRID_COLS, self.GRID_ROWS),
-                interpolation=cv2.INTER_AREA,
-            )
-            contribution = small.astype(np.float32) / 255.0
-            self._grid = np.minimum(self._grid + contribution * 0.35, 1.0)
+            if enable_heatmap:
+                small = cv2.resize(
+                    motion_mask,
+                    (self.GRID_COLS, self.GRID_ROWS),
+                    interpolation=cv2.INTER_AREA,
+                )
+                contribution = small.astype(np.float32) / 255.0
+                self._grid = np.minimum(self._grid + contribution * 0.35, 1.0)
             self._track_centroid(motion_mask, frame_shape)
 
         prediction = (
             self._predict_motion() if enable_prediction else MotionPrediction()
         )
-        hot_zones = self._top_zones()
-        peak = float(self._grid.max()) if self._grid.size else 0.0
+        hot_zones = self._top_zones() if enable_heatmap else []
+        peak = float(self._grid.max()) if enable_heatmap and self._grid.size else 0.0
 
         self._last_snapshot = MotionAnalyticsSnapshot(
             hot_zones=hot_zones,

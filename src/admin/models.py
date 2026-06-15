@@ -10,6 +10,33 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+DEFAULT_SNAPSHOT_EVENT_TYPES = [
+    "objeto_detectado",
+    "cambio_objetos",
+    "cambio_escena",
+]
+
+ALL_SNAPSHOT_EVENT_TYPES = [
+    "movimiento",
+    "objeto_detectado",
+    "cambio_objetos",
+    "cambio_escena",
+]
+
+
+def _parse_snapshot_event_types(raw: Any) -> list[str]:
+    if raw is None:
+        return list(DEFAULT_SNAPSHOT_EVENT_TYPES)
+    if isinstance(raw, str):
+        items = [part.strip() for part in raw.split(",") if part.strip()]
+    elif isinstance(raw, list):
+        items = [str(part).strip() for part in raw if str(part).strip()]
+    else:
+        return list(DEFAULT_SNAPSHOT_EVENT_TYPES)
+    valid = [item for item in items if item in ALL_SNAPSHOT_EVENT_TYPES]
+    return valid or list(DEFAULT_SNAPSHOT_EVENT_TYPES)
+
+
 @dataclass
 class Camera:
     id: str
@@ -21,6 +48,7 @@ class Camera:
     rtsp_transport: str = "tcp"
     tuya_device_id: str = ""
     tuya_stream_type: str = "rtsp"
+    heatmap_enabled: bool = True
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
 
@@ -40,6 +68,7 @@ class Camera:
             rtsp_transport=data.get("rtsp_transport", "tcp"),
             tuya_device_id=data.get("tuya_device_id", ""),
             tuya_stream_type=data.get("tuya_stream_type", "rtsp"),
+            heatmap_enabled=bool(data.get("heatmap_enabled", True)),
             created_at=data.get("created_at", _now_iso()),
             updated_at=data.get("updated_at", _now_iso()),
         )
@@ -133,6 +162,11 @@ class YoloSettings:
     min_motion_area: int = 5000
     detection_interval_sec: float = 0.5
     save_snapshots: bool = True
+    snapshot_event_types: list[str] = field(
+        default_factory=lambda: ["objeto_detectado", "cambio_objetos", "cambio_escena"]
+    )
+    snapshot_cooldown_sec: float = 60.0
+    snapshot_min_persons: int = 0
     heatmap_enabled: bool = True
     heatmap_opacity: float = 0.45
     heatmap_decay: float = 0.96
@@ -153,6 +187,11 @@ class YoloSettings:
             min_motion_area=int(data.get("min_motion_area", 5000)),
             detection_interval_sec=float(data.get("detection_interval_sec", 0.5)),
             save_snapshots=bool(data.get("save_snapshots", True)),
+            snapshot_event_types=_parse_snapshot_event_types(
+                data.get("snapshot_event_types")
+            ),
+            snapshot_cooldown_sec=float(data.get("snapshot_cooldown_sec", 60.0)),
+            snapshot_min_persons=int(data.get("snapshot_min_persons", 0)),
             heatmap_enabled=bool(data.get("heatmap_enabled", True)),
             heatmap_opacity=float(data.get("heatmap_opacity", 0.45)),
             heatmap_decay=float(data.get("heatmap_decay", 0.96)),

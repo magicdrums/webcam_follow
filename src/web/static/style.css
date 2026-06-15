@@ -151,6 +151,13 @@ body {
   color: var(--muted);
 }
 
+.snapshot-triggers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.35rem 1rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
 .form__actions--start {
   justify-content: flex-start;
   flex-wrap: wrap;

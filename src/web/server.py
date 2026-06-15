@@ -163,6 +163,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             rtsp_transport=payload.get("rtsp_transport", "tcp"),
             tuya_device_id=payload.get("tuya_device_id", ""),
             tuya_stream_type=payload.get("tuya_stream_type", "rtsp"),
+            heatmap_enabled=bool(payload.get("heatmap_enabled", True)),
         )
         store.add_camera(camera)
         manager.reload()
@@ -194,6 +195,12 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             abort(400, description="heatmap_opacity debe estar entre 0.05 y 0.95")
         if updated.heatmap_decay < 0.8 or updated.heatmap_decay > 0.999:
             abort(400, description="heatmap_decay debe estar entre 0.8 y 0.999")
+        if updated.snapshot_cooldown_sec < 0:
+            abort(400, description="snapshot_cooldown_sec no puede ser negativo")
+        if updated.snapshot_min_persons < 0:
+            abort(400, description="snapshot_min_persons no puede ser negativo")
+        if updated.save_snapshots and not updated.snapshot_event_types:
+            abort(400, description="Selecciona al menos un tipo de evento para capturas")
         store.update_yolo_settings(updated)
         return jsonify(yolo_settings_to_public_dict(updated))
 
@@ -264,6 +271,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         allowed = {
             "name", "enabled", "source_type", "stream_url",
             "camera_index", "rtsp_transport", "tuya_device_id", "tuya_stream_type",
+            "heatmap_enabled",
         }
         updates = {key: payload[key] for key in allowed if key in payload}
         if updates.get("source_type") == "tuya":

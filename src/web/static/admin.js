@@ -110,6 +110,7 @@ function showCameraForm(camera = null) {
   $("camera-rtsp-transport").value = camera?.rtsp_transport || "tcp";
   $("camera-tuya-stream-type").value = camera?.tuya_stream_type || "rtsp";
   $("camera-enabled").checked = camera?.enabled !== false;
+  $("camera-heatmap-enabled").checked = camera?.heatmap_enabled !== false;
   toggleCameraSourceFields();
   if (camera?.source_type === "tuya") {
     loadTuyaDeviceOptions(camera.tuya_device_id || "");
@@ -132,7 +133,7 @@ async function loadCamerasAdmin() {
     <table class="table">
       <thead>
         <tr>
-          <th>Nombre</th><th>Tipo</th><th>Fuente</th><th>Estado</th><th></th>
+          <th>Nombre</th><th>Tipo</th><th>Fuente</th><th>Calor</th><th>Estado</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -143,6 +144,7 @@ async function loadCamerasAdmin() {
             <td><strong>${c.name}</strong></td>
             <td>${sourceTypeLabel(c.source_type)}</td>
             <td class="cell-mono">${sourceDetail(c)}</td>
+            <td>${c.heatmap_enabled !== false ? "Sí" : "No"}</td>
             <td><span class="badge ${c.enabled ? "badge--online" : ""}">${c.enabled ? "Activa" : "Inactiva"}</span></td>
             <td class="cell-actions">
               <button class="btn btn--sm" data-edit-camera="${c.id}">Editar</button>
@@ -190,6 +192,7 @@ $("camera-form").addEventListener("submit", async (e) => {
     tuya_device_id: $("camera-tuya-device").value,
     tuya_stream_type: $("camera-tuya-stream-type").value,
     enabled: $("camera-enabled").checked,
+    heatmap_enabled: $("camera-heatmap-enabled").checked,
   };
   try {
     if (id) {
@@ -625,6 +628,19 @@ function renderYoloClassGrid(classes) {
     .join("");
 }
 
+function setSnapshotEventCheckboxes(types) {
+  const allowed = new Set(types || []);
+  document.querySelectorAll('input[name="snapshot-event"]').forEach((el) => {
+    el.checked = allowed.has(el.value);
+  });
+}
+
+function selectedSnapshotEventTypes() {
+  return Array.from(document.querySelectorAll('input[name="snapshot-event"]:checked')).map(
+    (el) => el.value
+  );
+}
+
 async function loadYoloAdmin() {
   const [{ classes }, cfg] = await Promise.all([
     api("GET", "/api/admin/yolo/classes"),
@@ -640,6 +656,9 @@ async function loadYoloAdmin() {
   $("yolo-device").value = cfg.yolo_device || "auto";
   $("yolo-on-motion-only").checked = cfg.yolo_on_motion_only;
   $("yolo-save-snapshots").checked = cfg.save_snapshots !== false;
+  setSnapshotEventCheckboxes(cfg.snapshot_event_types);
+  $("yolo-snapshot-cooldown").value = cfg.snapshot_cooldown_sec ?? 60;
+  $("yolo-snapshot-min-persons").value = cfg.snapshot_min_persons ?? 0;
   $("yolo-heatmap-enabled").checked = cfg.heatmap_enabled !== false;
   $("yolo-prediction-enabled").checked = cfg.motion_prediction_enabled !== false;
   $("yolo-heatmap-opacity").value = cfg.heatmap_opacity ?? 0.45;
@@ -678,6 +697,10 @@ document.querySelectorAll("[data-yolo-preset]").forEach((btn) => {
 
 $("yolo-config-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if ($("yolo-save-snapshots").checked && !selectedSnapshotEventTypes().length) {
+    toast("Selecciona al menos un evento para guardar capturas", true);
+    return;
+  }
   let customIds = $("yolo-classes-custom").value.trim();
   if ($("yolo-classes-mode").value === "custom" && !customIds) {
     customIds = selectedYoloClassIds().join(",");
@@ -690,6 +713,9 @@ $("yolo-config-form").addEventListener("submit", async (e) => {
     yolo_device: $("yolo-device").value,
     yolo_on_motion_only: $("yolo-on-motion-only").checked,
     save_snapshots: $("yolo-save-snapshots").checked,
+    snapshot_event_types: selectedSnapshotEventTypes(),
+    snapshot_cooldown_sec: parseFloat($("yolo-snapshot-cooldown").value),
+    snapshot_min_persons: parseInt($("yolo-snapshot-min-persons").value, 10),
     heatmap_enabled: $("yolo-heatmap-enabled").checked,
     heatmap_opacity: parseFloat($("yolo-heatmap-opacity").value),
     heatmap_decay: parseFloat($("yolo-heatmap-decay").value),

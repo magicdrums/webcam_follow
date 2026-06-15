@@ -87,6 +87,11 @@
             <input type="checkbox" id="camera-enabled" checked>
             <span>Activa (monitorear)</span>
           </label>
+          <label class="form__field form__field--check">
+            <input type="checkbox" id="camera-heatmap-enabled" checked>
+            <span>Mapa de calor en vista en vivo</span>
+          </label>
+          <p class="muted form-hint">Desactiva el overlay y el panel de calor para esta cámara. La opacidad y decay se configuran en YOLO / Detección.</p>
           <div class="form__actions">
             <button class="btn btn--primary" type="submit">Guardar</button>
             <button class="btn" type="button" id="camera-form-cancel">Cancelar</button>
@@ -269,10 +274,43 @@
               <input type="checkbox" id="yolo-on-motion-only">
               <span>YOLO solo cuando hay movimiento (MOG2)</span>
             </label>
+          </fieldset>
+
+          <fieldset class="form__fieldset">
+            <legend>Capturas automáticas</legend>
             <label class="form__field form__field--check">
               <input type="checkbox" id="yolo-save-snapshots">
-              <span>Guardar capturas en alertas</span>
+              <span>Guardar capturas en disco</span>
             </label>
+            <p class="muted form-hint">Elige qué eventos generan una foto. Usa el cooldown para no guardar una por cada frame.</p>
+            <div id="snapshot-triggers" class="snapshot-triggers">
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="snapshot-event" value="movimiento">
+                <span>Movimiento</span>
+              </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="snapshot-event" value="objeto_detectado">
+                <span>Objeto detectado (YOLO)</span>
+              </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="snapshot-event" value="cambio_objetos">
+                <span>Cambio de objetos</span>
+              </label>
+              <label class="form__field form__field--check">
+                <input type="checkbox" name="snapshot-event" value="cambio_escena">
+                <span>Cambio de escena</span>
+              </label>
+            </div>
+            <div class="form__grid">
+              <label class="form__field">
+                <span>Cooldown entre capturas (s)</span>
+                <input type="number" id="yolo-snapshot-cooldown" min="0" step="1" value="60">
+              </label>
+              <label class="form__field">
+                <span>Mín. personas (0 = cualquiera)</span>
+                <input type="number" id="yolo-snapshot-min-persons" min="0" step="1" value="0">
+              </label>
+            </div>
           </fieldset>
 
           <fieldset class="form__fieldset">
@@ -293,8 +331,9 @@
             <legend>Mapa de calor y predicción</legend>
             <label class="form__field form__field--check">
               <input type="checkbox" id="yolo-heatmap-enabled" checked>
-              <span>Mostrar mapa de calor en vídeo</span>
+              <span>Mostrar mapa de calor en vídeo (global)</span>
             </label>
+            <p class="muted form-hint">Cada cámara puede desactivarlo también en Admin → Cámaras → Editar.</p>
             <label class="form__field form__field--check">
               <input type="checkbox" id="yolo-prediction-enabled" checked>
               <span>Mostrar predicción de movimiento (flecha amarilla)</span>

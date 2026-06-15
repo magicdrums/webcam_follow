@@ -106,6 +106,9 @@ class DetectionConfig:
     detection_interval_sec: float
     notification_cooldown_sec: float
     save_snapshots: bool
+    snapshot_event_types: tuple[str, ...]
+    snapshot_cooldown_sec: float
+    snapshot_min_persons: int
     snapshot_dir: Path
     show_preview: bool
     yolo_model: str
@@ -227,6 +230,13 @@ def load_config() -> AppConfig:
             ),
             notification_cooldown_sec=_env_float("NOTIFICATION_COOLDOWN_SEC", 60),
             save_snapshots=_env_bool("SAVE_SNAPSHOTS", True),
+            snapshot_event_types=(
+                "objeto_detectado",
+                "cambio_objetos",
+                "cambio_escena",
+            ),
+            snapshot_cooldown_sec=_env_float("SNAPSHOT_COOLDOWN_SEC", 60),
+            snapshot_min_persons=_env_int("SNAPSHOT_MIN_PERSONS", 0),
             snapshot_dir=Path(_env_str("SNAPSHOT_DIR", "snapshots")),
             show_preview=_default_show_preview(profile),
             yolo_model=_env_str("YOLO_MODEL", profile.yolo_model),
