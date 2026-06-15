@@ -48,6 +48,32 @@
       </div>
     </div>
     <div id="menu-panel-alerts" class="side-menu__panel hidden" role="tabpanel">
+      <div class="alerts-toolbar">
+        <p class="alerts-toolbar__label">Mostrar eventos</p>
+        <div id="alert-filters" class="alert-filters">
+          <label class="alert-filters__item">
+            <input type="checkbox" name="alert-filter" value="movimiento">
+            Movimiento
+          </label>
+          <label class="alert-filters__item">
+            <input type="checkbox" name="alert-filter" value="objeto_detectado">
+            Objeto detectado
+          </label>
+          <label class="alert-filters__item">
+            <input type="checkbox" name="alert-filter" value="cambio_objetos">
+            Cambio de objetos
+          </label>
+          <label class="alert-filters__item">
+            <input type="checkbox" name="alert-filter" value="cambio_escena">
+            Cambio de escena
+          </label>
+        </div>
+        <label class="alert-filters__item alert-filters__item--solo">
+          <input type="checkbox" id="alert-filter-snapshot">
+          Solo con captura
+        </label>
+        <p id="alerts-filter-label" class="muted alerts-filter-label">—</p>
+      </div>
       <ul id="alerts-list" class="alerts">
         <li class="alerts__empty muted">Sin alertas aún</li>
       </ul>

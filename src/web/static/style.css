@@ -715,6 +715,44 @@ body {
   margin-top: 0.35rem;
 }
 
+.alerts-toolbar {
+  margin-bottom: 0.75rem;
+}
+
+.alerts-toolbar__label {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.alert-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.alert-filters__item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.alert-filters__item--solo {
+  margin-top: 0.15rem;
+}
+
+.alerts-filter-label {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+}
+
+#menu-panel-alerts .alerts {
+  max-height: none;
+}
+
 .btn {
   font-size: 0.8rem;
   padding: 0.35rem 0.75rem;

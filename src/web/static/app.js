@@ -256,41 +256,127 @@ function renderHeatmap(data) {
   }
 }
 
+const ALERT_EVENT_LABELS = {
+  movimiento: "Movimiento",
+  objeto_detectado: "Objeto detectado",
+  cambio_objetos: "Cambio de objetos",
+  cambio_escena: "Cambio de escena",
+};
+
+const ALERT_FILTER_STORAGE_KEY = "webcam-follow-alert-filters";
+const ALERT_FILTER_DEFAULTS = {
+  movimiento: true,
+  objeto_detectado: false,
+  cambio_objetos: false,
+  cambio_escena: true,
+  onlyWithSnapshot: false,
+};
+
+let lastAlertsRaw = [];
+
+function loadAlertFilters() {
+  try {
+    const raw = localStorage.getItem(ALERT_FILTER_STORAGE_KEY);
+    if (!raw) return { ...ALERT_FILTER_DEFAULTS };
+    const parsed = JSON.parse(raw);
+    return { ...ALERT_FILTER_DEFAULTS, ...parsed };
+  } catch {
+    return { ...ALERT_FILTER_DEFAULTS };
+  }
+}
+
+function saveAlertFilters(filters) {
+  try {
+    localStorage.setItem(ALERT_FILTER_STORAGE_KEY, JSON.stringify(filters));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+let alertFilters = loadAlertFilters();
+
+function readAlertFiltersFromUi() {
+  const next = { ...ALERT_FILTER_DEFAULTS };
+  document.querySelectorAll('input[name="alert-filter"]').forEach((input) => {
+    next[input.value] = input.checked;
+  });
+  next.onlyWithSnapshot = $("alert-filter-snapshot").checked;
+  return next;
+}
+
+function syncAlertFilterUi() {
+  document.querySelectorAll('input[name="alert-filter"]').forEach((input) => {
+    input.checked = Boolean(alertFilters[input.value]);
+  });
+  $("alert-filter-snapshot").checked = Boolean(alertFilters.onlyWithSnapshot);
+}
+
+function filterAlerts(alerts) {
+  return alerts.filter((alert) => {
+    if (!alertFilters[alert.event_type]) return false;
+    if (alertFilters.onlyWithSnapshot && !alert.snapshot) return false;
+    return true;
+  });
+}
+
 function renderAlerts(alerts) {
+  lastAlertsRaw = alerts;
+  const filtered = filterAlerts(alerts);
   const list = $("alerts-list");
-  if (!alerts.length) {
-    list.innerHTML = '<li class="alerts__empty muted">Sin alertas aún</li>';
+  const label = $("alerts-filter-label");
+
+  if (label) {
+    if (!alerts.length) {
+      label.textContent = "Sin alertas recientes";
+    } else if (!filtered.length) {
+      label.textContent = `0 de ${alerts.length} alertas (ajusta los filtros)`;
+    } else if (filtered.length === alerts.length) {
+      label.textContent = `${filtered.length} alerta(s)`;
+    } else {
+      label.textContent = `${filtered.length} de ${alerts.length} alertas`;
+    }
+  }
+
+  if (!filtered.length) {
+    list.innerHTML = alerts.length
+      ? '<li class="alerts__empty muted">Ninguna alerta coincide con los filtros</li>'
+      : '<li class="alerts__empty muted">Sin alertas aún</li>';
     return;
   }
-  list.innerHTML = alerts
+
+  list.innerHTML = filtered
     .map(
-      (a, index) => `
+      (a) => `
     <li>
-      <div class="alert__type">${(a.camera_name || "Cámara")} · ${a.event_type.replace(/_/g, " ")}</div>
+      <div class="alert__type">${(a.camera_name || "Cámara")} · ${ALERT_EVENT_LABELS[a.event_type] || a.event_type.replace(/_/g, " ")}</div>
       <div>${a.message}</div>
       <div class="alert__time">${formatTime(a.timestamp)}</div>
       ${
         a.snapshot
-          ? `<button type="button" class="btn btn--sm alert__media-btn" data-alert-index="${index}">Ver captura</button>`
+          ? `<button type="button" class="btn btn--sm alert__media-btn" data-alert-camera="${a.camera_id}" data-alert-snapshot="${a.snapshot}" data-alert-ts="${a.timestamp || ""}">Ver captura</button>`
           : ""
       }
     </li>`
     )
     .join("");
 
-  list.querySelectorAll("[data-alert-index]").forEach((btn) => {
+  list.querySelectorAll("[data-alert-snapshot]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const alert = alerts[parseInt(btn.dataset.alertIndex, 10)];
-      if (!alert?.snapshot) return;
       openMediaViewerItem({
-        url: `/snapshots/${alert.camera_id}/${alert.snapshot}`,
-        filename: alert.snapshot,
-        name: alert.snapshot,
-        timestamp: alert.timestamp,
-        kind: alert.snapshot.endsWith(".mp4") ? "video" : "photo",
+        url: `/snapshots/${btn.dataset.alertCamera}/${btn.dataset.alertSnapshot}`,
+        filename: btn.dataset.alertSnapshot,
+        name: btn.dataset.alertSnapshot,
+        timestamp: btn.dataset.alertTs || undefined,
+        kind: btn.dataset.alertSnapshot.endsWith(".mp4") ? "video" : "photo",
       });
     });
   });
+}
+
+function applyAlertFiltersFromUi() {
+  alertFilters = readAlertFiltersFromUi();
+  saveAlertFilters(alertFilters);
+  renderAlerts(lastAlertsRaw);
 }
 
 let selectedSnapshotDate = null;
@@ -579,6 +665,12 @@ $("cal-clear").addEventListener("click", () => {
   selectedSnapshotDate = null;
   refreshSnapshotsPanel();
 });
+
+syncAlertFilterUi();
+document.querySelectorAll('input[name="alert-filter"]').forEach((input) => {
+  input.addEventListener("change", applyAlertFiltersFromUi);
+});
+$("alert-filter-snapshot").addEventListener("change", applyAlertFiltersFromUi);
 
 function openSideMenu() {
   $("side-menu").classList.add("is-open");
