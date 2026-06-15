@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -355,7 +355,7 @@ class CameraWorker:
             platform_label=self.app_config.detection.platform_label,
             stream_url=self._mask_stream_url(self.video_config.stream_url),
             connected=True,
-            last_update=datetime.now().isoformat(timespec="seconds"),
+            last_update=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             hot_zones=(motion_snapshot or {}).get("hot_zones", []),
             motion_prediction=(motion_snapshot or {}).get("prediction", {}),
             heatmap_peak=(motion_snapshot or {}).get("peak_intensity", 0.0),

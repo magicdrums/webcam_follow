@@ -12,10 +12,29 @@ let canvasCtx = null;
 const FRAME_INTERVAL_MS = 250;
 const FRAME_INTERVAL_MAX_MS = 1200;
 
+function parseAppDate(iso) {
+  if (!iso) return null;
+  const raw = String(iso).trim();
+  // Timestamps antiguos sin zona horaria: el servidor los guardaba en UTC (p. ej. contenedor).
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) && !/(Z|[+-]\d{2}:\d{2})$/i.test(raw)) {
+    return new Date(`${raw}Z`);
+  }
+  return new Date(raw);
+}
+
 function formatTime(iso) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("es");
+    const date = parseAppDate(iso);
+    if (!date || Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString("es", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
   } catch {
     return iso;
   }
@@ -397,7 +416,9 @@ function formatSnapshotTime(item) {
   const raw = item.timestamp || item.mtime;
   if (!raw) return item.name;
   try {
-    return new Date(raw).toLocaleString("es", {
+    const date = parseAppDate(raw);
+    if (!date || Number.isNaN(date.getTime())) return item.name;
+    return date.toLocaleString("es", {
       day: "2-digit",
       month: "2-digit",
       hour: "2-digit",
