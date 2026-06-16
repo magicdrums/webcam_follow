@@ -44,6 +44,7 @@ class AdminStore:
         self._security_file = self.data_dir / "security_state.json"
         self._lock = threading.Lock()
         self._tuya_client: TuyaClient | None = None
+        self._security_state_cache: SecurityState | None = None
 
     def bootstrap_from_env(self, config: AppConfig) -> None:
         with self._lock:
@@ -325,10 +326,14 @@ class AdminStore:
 
     def get_security_state(self) -> SecurityState:
         with self._lock:
+            if self._security_state_cache is not None:
+                return self._security_state_cache
             data = self._load_object(self._security_file)
             if not data:
-                return SecurityState()
-            return SecurityState.from_dict(data)
+                self._security_state_cache = SecurityState()
+            else:
+                self._security_state_cache = SecurityState.from_dict(data)
+            return self._security_state_cache
 
     def set_security_state(self, *, armed: bool, source: str = "web") -> SecurityState:
         from src.admin.models import _now_iso
@@ -340,6 +345,8 @@ class AdminStore:
         )
         with self._lock:
             self._save_object(self._security_file, state.to_dict())
+            self._security_state_cache = state
+        logger.info("Seguridad: %s (origen: %s)", "armado" if armed else "desarmado", source)
         return state
 
 

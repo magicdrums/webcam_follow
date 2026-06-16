@@ -109,7 +109,8 @@ class VisionDetector:
                 min_detection_confidence=0.6,
                 min_tracking_confidence=0.5,
                 max_num_hands=self.config.hand_max_num_hands,
-                enabled=self.config.hand_gesture_enabled,
+                enabled=self.config.hand_gesture_enabled
+                and self.config.surveillance_armed,
             )
         except Exception:
             logger.exception("No se pudo sincronizar gestos de mano; se desactivan temporalmente")

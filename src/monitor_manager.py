@@ -117,6 +117,7 @@ class CameraWorker:
         self._rule_cooldowns: dict[str, float] = {}
         self._last_snapshot_at = 0.0
         self._settings_version = ""
+        self._surveillance_armed = True
         self._motion_analytics = MotionAnalytics()
         self._motion_recorder = MotionRecorder(
             self.snapshot_dir, self.camera.name
@@ -315,6 +316,9 @@ class CameraWorker:
         frame,
         notifications: StoreNotificationService,
     ) -> None:
+        if not self.store.get_security_state().armed:
+            return
+
         snapshot_name = None
         snapshot_path = None
         detection = self.store.build_detection_config(self.app_config)
@@ -490,12 +494,15 @@ class CameraWorker:
         self, detector: VisionDetector | None, detection: DetectionConfig
     ) -> VisionDetector:
         settings = self.store.get_yolo_settings()
-        if detector is None or settings.updated_at != self._settings_version:
+        armed_changed = detection.surveillance_armed != self._surveillance_armed
+        settings_changed = settings.updated_at != self._settings_version
+        if detector is None or settings_changed or armed_changed:
             if detector is None:
                 detector = VisionDetector(detection)
             else:
                 detector.update_config(detection)
             self._settings_version = settings.updated_at
+            self._surveillance_armed = detection.surveillance_armed
         return detector
 
     def _run_capture_loop(self) -> None:

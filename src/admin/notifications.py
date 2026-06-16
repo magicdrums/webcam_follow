@@ -35,6 +35,12 @@ class StoreNotificationService:
         use_whatsapp: bool = False,
         use_webhook: bool = False,
     ) -> None:
+        if not self._store.get_security_state().armed:
+            logger.debug(
+                "Notificación omitida (sistema desarmado): %s", event.message
+            )
+            return
+
         channels = self._store.get_notification_channels()
         email = EmailNotifier(channels_to_email_config(channels))
         telegram = TelegramNotifier(channels_to_telegram_config(channels))
