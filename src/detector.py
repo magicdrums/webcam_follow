@@ -217,14 +217,16 @@ class VisionDetector:
             )
 
         if total_objects > 0:
-            events.append(
-                DetectionEvent(
-                    event_type=EventType.OBJECT,
-                    message=f"Objetos detectados: {_format_object_counts(object_counts)}",
-                    object_counts=object_counts,
-                    motion_area=motion_area,
+            prev_total = sum(self._state.last_object_counts.values())
+            if prev_total == 0:
+                events.append(
+                    DetectionEvent(
+                        event_type=EventType.OBJECT,
+                        message=f"Objetos detectados: {_format_object_counts(object_counts)}",
+                        object_counts=object_counts,
+                        motion_area=motion_area,
+                    )
                 )
-            )
 
         if object_counts != self._state.last_object_counts and (
             self._state.last_object_counts or object_counts

@@ -379,6 +379,10 @@ $("rule-form").addEventListener("submit", async (e) => {
     notify_webhook: $("rule-webhook").checked,
     enabled: $("rule-enabled").checked,
   };
+  if (payload.enabled && !payload.event_types.length) {
+    toast("Selecciona al menos un tipo de evento", true);
+    return;
+  }
   try {
     if (id) {
       await api("PUT", `/api/admin/alert-rules/${id}`, payload);

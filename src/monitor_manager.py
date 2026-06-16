@@ -261,8 +261,11 @@ class CameraWorker:
                 if self._timed_clip is clip:
                     self._timed_clip = None
 
-    def _should_notify_rule(self, rule_id: str, cooldown_sec: int) -> bool:
-        elapsed = time.monotonic() - self._rule_cooldowns.get(rule_id, 0.0)
+    def _should_notify_rule(
+        self, rule_id: str, cooldown_sec: int, event_type: str
+    ) -> bool:
+        key = f"{rule_id}:{event_type}"
+        elapsed = time.monotonic() - self._rule_cooldowns.get(key, 0.0)
         return elapsed >= cooldown_sec
 
     def _snapshot_cooldown_ok(self, cooldown_sec: float) -> bool:
@@ -296,48 +299,50 @@ class CameraWorker:
         if not self.store.get_security_state().armed:
             return
 
-        gesture_events = [
-            event for event in events if event.event_type == EventType.HAND_GESTURE
-        ]
-        other_events = [
-            event for event in events if event.event_type != EventType.HAND_GESTURE
-        ]
-
-        for event in gesture_events:
-            self._dispatch_event(event, frame, notifications)
-
-        if other_events:
-            primary = _pick_primary_event(other_events)
-            self._dispatch_event(primary, frame, notifications)
+        notified_rule_ids: set[str] = set()
+        for event in events:
+            self._dispatch_event(
+                event,
+                frame,
+                notifications,
+                notified_rule_ids=notified_rule_ids,
+            )
 
     def _dispatch_event(
         self,
-        primary: DetectionEvent,
+        event: DetectionEvent,
         frame,
         notifications: StoreNotificationService,
+        *,
+        notified_rule_ids: set[str] | None = None,
     ) -> None:
         if not self.store.get_security_state().armed:
             return
 
+        if notified_rule_ids is None:
+            notified_rule_ids = set()
+
         snapshot_name = None
         snapshot_path = None
         detection = self.store.build_detection_config(self.app_config)
+        event_type = event.event_type.value
 
         rules = self.store.matching_rules(
             self.camera.id,
-            primary.event_type.value,
-            primary.person_count,
-            gesture=primary.gesture,
+            event_type,
+            event.person_count,
+            gesture=event.gesture,
         )
         pending_rules = [
             rule
             for rule in rules
-            if self._should_notify_rule(rule.id, rule.cooldown_sec)
+            if rule.id not in notified_rule_ids
+            and self._should_notify_rule(rule.id, rule.cooldown_sec, event_type)
         ]
 
-        if detection.save_snapshots:
+        if detection.save_snapshots and pending_rules:
             snapshot_event = _pick_snapshot_event(
-                [primary],
+                [event],
                 detection.snapshot_event_types,
                 detection.snapshot_min_persons,
             )
@@ -349,24 +354,26 @@ class CameraWorker:
                 )
                 snapshot_name = snapshot_path.name
                 self._last_snapshot_at = time.monotonic()
-            elif pending_rules and snapshot_path is None:
+            elif snapshot_path is None:
                 snapshot_path = save_snapshot(
-                    frame, self.snapshot_dir, primary
+                    frame, self.snapshot_dir, event
                 )
                 snapshot_name = snapshot_path.name
                 self._last_snapshot_at = time.monotonic()
 
         notified = False
+        notified_rule_id: str | None = None
         if pending_rules:
             for rule in pending_rules:
                 logger.info(
-                    "Alerta [%s] regla '%s': %s",
+                    "Alerta [%s] regla '%s' (%s): %s",
                     self.camera.name,
                     rule.name,
-                    primary.message,
+                    event_type,
+                    event.message,
                 )
                 notifications.notify(
-                    primary,
+                    event,
                     snapshot_path,
                     camera_id=self.camera.id,
                     camera_name=self.camera.name,
@@ -375,39 +382,50 @@ class CameraWorker:
                     use_whatsapp=rule.notify_whatsapp,
                     use_webhook=rule.notify_webhook,
                 )
-                self._rule_cooldowns[rule.id] = time.monotonic()
+                cooldown_key = f"{rule.id}:{event_type}"
+                self._rule_cooldowns[cooldown_key] = time.monotonic()
+                notified_rule_ids.add(rule.id)
+                notified_rule_id = rule.id
                 notified = True
         elif rules:
-            logger.info(
-                "Alerta [%s]: %s (reglas en cooldown, no notificado)",
+            logger.debug(
+                "Alerta [%s] %s (reglas en cooldown o ya notificadas en este lote)",
                 self.camera.name,
-                primary.message,
+                event.message,
             )
         else:
-            logger.info(
-                "Alerta [%s]: %s (sin regla coincidente, no notificado)",
+            logger.debug(
+                "Alerta [%s] %s (sin regla para tipo '%s')",
                 self.camera.name,
-                primary.message,
+                event.message,
+                event_type,
             )
+
+        if not rules and not pending_rules:
+            return
 
         history = AlertHistoryEntry.create(
             camera_id=self.camera.id,
             camera_name=self.camera.name,
-            event_type=primary.event_type.value,
-            message=primary.message,
-            object_counts=dict(primary.object_counts),
+            event_type=event_type,
+            message=event.message,
+            object_counts=dict(event.object_counts),
             snapshot=snapshot_name,
+            rule_id=notified_rule_id,
             notified=notified,
         )
         self.store.add_history(history)
 
+        if not notified:
+            return
+
         record = AlertRecord(
             camera_id=self.camera.id,
             camera_name=self.camera.name,
-            timestamp=primary.timestamp.isoformat(),
-            event_type=primary.event_type.value,
-            message=primary.message,
-            object_counts=dict(primary.object_counts),
+            timestamp=event.timestamp.isoformat(),
+            event_type=event_type,
+            message=event.message,
+            object_counts=dict(event.object_counts),
             snapshot=snapshot_name,
         )
         with self._lock:

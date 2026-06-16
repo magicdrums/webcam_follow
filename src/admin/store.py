@@ -241,6 +241,8 @@ class AdminStore:
         person_count: int,
         gesture: str | None = None,
     ) -> list[AlertRule]:
+        if not self.get_security_state().armed:
+            return []
         return [
             rule
             for rule in self.list_alert_rules()

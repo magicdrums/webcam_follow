@@ -357,13 +357,16 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         name = (payload.get("name") or "").strip()
         if not name:
             abort(400, description="Nombre obligatorio")
+        event_types = list(payload.get("event_types", [
+            "movimiento", "objeto_detectado", "cambio_objetos", "cambio_escena",
+        ]))
+        if bool(payload.get("enabled", True)) and not event_types:
+            abort(400, description="Selecciona al menos un tipo de evento")
         rule = AlertRule.create(
             name=name,
             enabled=bool(payload.get("enabled", True)),
             camera_ids=list(payload.get("camera_ids", [])),
-            event_types=list(payload.get("event_types", [
-                "movimiento", "objeto_detectado", "cambio_objetos", "cambio_escena",
-            ])),
+            event_types=event_types,
             notify_email=bool(payload.get("notify_email", False)),
             notify_telegram=bool(payload.get("notify_telegram", False)),
             notify_whatsapp=bool(payload.get("notify_whatsapp", False)),
@@ -384,6 +387,9 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             "cooldown_sec", "min_persons",
         }
         updates = {key: payload[key] for key in allowed if key in payload}
+        if updates.get("enabled", True) and "event_types" in updates:
+            if not updates["event_types"]:
+                abort(400, description="Selecciona al menos un tipo de evento")
         rule = store.update_alert_rule(rule_id, updates)
         if not rule:
             abort(404)
