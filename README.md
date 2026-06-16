@@ -195,6 +195,7 @@ Con `WEB_ENABLED=true` (activo por defecto en contenedor) tienes un panel en el 
 #### Canales de notificación (`/admin` → Canales)
 
 - Configura **Email (SMTP)**, **Telegram**, **WhatsApp (Twilio)** y **Webhook** desde la web
+- **Armado / desarmado**: botón en la web o `/armar` / `/desarmar` en Telegram — pausa YOLO y alertas sin apagar la cámara
 - **Bot de Telegram interactivo**: `/foto`, `/video`, `/movimiento` — ver [docs/telegram-bot.md](docs/telegram-bot.md)
 - Activa/desactiva cada canal sin editar `.env`
 - El webhook envía JSON a Home Assistant para integrar **Google Home**

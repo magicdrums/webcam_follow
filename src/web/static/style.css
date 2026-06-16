@@ -45,6 +45,22 @@ body {
 
 .header__status,
 .header__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.btn--security {
+  font-weight: 600;
+  min-width: 6.5rem;
+  border-width: 1px;
+}
+.btn--security.btn--armed {
+  color: #86efac;
+  border-color: #166534;
+  background: #052e16;
+}
+.btn--security.btn--disarmed {
+  color: #fdba74;
+  border-color: #9a3412;
+  background: #431407;
+}
+.btn--security:disabled { opacity: 0.6; cursor: wait; }
 
 .select {
   font-size: 0.85rem;

@@ -128,6 +128,7 @@ class DetectionConfig:
         "saludo",
     )
     hand_max_num_hands: int = 2
+    surveillance_armed: bool = True
 
 
 @dataclass(frozen=True)
@@ -270,6 +271,7 @@ def load_config() -> AppConfig:
             hand_gesture_cooldown_sec=_env_float("HAND_GESTURE_COOLDOWN_SEC", 2.0),
             hand_gesture_on_motion_only=_env_bool("HAND_GESTURE_ON_MOTION_ONLY", True),
             hand_max_num_hands=_env_int("HAND_MAX_NUM_HANDS", 2),
+            surveillance_armed=True,
         ),
         email=EmailConfig(
             enabled=_env_bool("EMAIL_ENABLED", False),

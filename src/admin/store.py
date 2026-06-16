@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,7 @@ from src.admin.models import (
     DEFAULT_SNAPSHOT_EVENT_TYPES,
     NotificationChannels,
     SnapshotSettings,
+    SecurityState,
     TuyaConfig,
     YoloSettings,
 )
@@ -39,6 +41,7 @@ class AdminStore:
         self._tuya_file = self.data_dir / "tuya_config.json"
         self._snapshots_file = self.data_dir / "snapshot_settings.json"
         self._yolo_file = self.data_dir / "yolo_settings.json"
+        self._security_file = self.data_dir / "security_state.json"
         self._lock = threading.Lock()
         self._tuya_client: TuyaClient | None = None
 
@@ -90,6 +93,12 @@ class AdminStore:
                 yolo = _yolo_settings_from_app_config(config)
                 self._save_object(self._yolo_file, yolo.to_dict())
                 logger.info("Configuración YOLO inicializada desde .env")
+
+            if not self._security_file.exists():
+                self._save_object(
+                    self._security_file, SecurityState(armed=True).to_dict()
+                )
+                logger.info("Estado de seguridad inicializado (armado)")
 
     def get_tuya_config(self) -> TuyaConfig:
         with self._lock:
@@ -310,7 +319,28 @@ class AdminStore:
         return updated
 
     def build_detection_config(self, config: AppConfig) -> DetectionConfig:
-        return build_detection_config(config.detection, self.get_yolo_settings())
+        base = build_detection_config(config.detection, self.get_yolo_settings())
+        armed = self.get_security_state().armed
+        return replace(base, surveillance_armed=armed)
+
+    def get_security_state(self) -> SecurityState:
+        with self._lock:
+            data = self._load_object(self._security_file)
+            if not data:
+                return SecurityState()
+            return SecurityState.from_dict(data)
+
+    def set_security_state(self, *, armed: bool, source: str = "web") -> SecurityState:
+        from src.admin.models import _now_iso
+
+        state = SecurityState(
+            armed=armed,
+            updated_at=_now_iso(),
+            updated_by=source,
+        )
+        with self._lock:
+            self._save_object(self._security_file, state.to_dict())
+        return state
 
 
 def _tuya_from_app_config(config: AppConfig) -> TuyaConfig:

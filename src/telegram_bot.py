@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 HELP_TEXT = """Comandos de Webcam Follow:
 
+/armar — Activa YOLO, gestos y alertas
+/desarmar — Solo vista en vivo (sin alertas ni detección)
+/seguridad — Estado armado/desarmado
 /foto [cámara] — Captura instantánea
 /video [seg] [cámara] — Graba vídeo (segundos, default 10)
 /movimiento [seg] [cámara] — Espera movimiento y graba
@@ -26,6 +29,7 @@ HELP_TEXT = """Comandos de Webcam Follow:
 /ayuda — Este mensaje
 
 Ejemplos:
+  /desarmar
   /foto
   /video 15 Entrada
   /movimiento 20
@@ -155,6 +159,10 @@ class TelegramBotWorker(threading.Thread):
             self._cmd_cameras(chat_id, client)
             return
 
+        if command in {"/armar", "/desarmar", "/seguridad"}:
+            self._cmd_security(chat_id, client, command)
+            return
+
         if command == "/estado":
             self._cmd_status(chat_id, client, args)
             return
@@ -224,6 +232,14 @@ class TelegramBotWorker(threading.Thread):
             "cameras": "/camaras",
             "estado": "/estado",
             "status": "/estado",
+            "armar": "/armar",
+            "armado": "/armar",
+            "arm": "/armar",
+            "desarmar": "/desarmar",
+            "desarmado": "/desarmar",
+            "disarm": "/desarmar",
+            "seguridad": "/seguridad",
+            "security": "/seguridad",
             "ayuda": "/ayuda",
             "help": "/help",
         }
@@ -239,6 +255,33 @@ class TelegramBotWorker(threading.Thread):
         if not worker:
             return None, None
         return camera_id, worker.camera.name
+
+    def _security_label(self) -> str:
+        state = self._manager.get_security_state()
+        armed = bool(state.get("armed", True))
+        label = "ARMADO" if armed else "DESARMADO"
+        updated = state.get("updated_at", "")
+        by = state.get("updated_by", "")
+        extra = ""
+        if updated:
+            extra = f"\nÚltimo cambio: {updated}"
+            if by:
+                extra += f" ({by})"
+        return f"Seguridad: {label}{extra}"
+
+    def _cmd_security(self, chat_id: str, client: TelegramClient, command: str) -> None:
+        if command == "/seguridad":
+            client.send_message(chat_id, self._security_label())
+            return
+        armed = command == "/armar"
+        state = self._manager.set_surveillance_armed(armed, source="telegram")
+        label = "armado" if state.get("armed") else "desarmado"
+        detail = (
+            "YOLO, gestos y alertas activos."
+            if state.get("armed")
+            else "Solo vista en vivo. Sin YOLO ni notificaciones automáticas."
+        )
+        client.send_message(chat_id, f"Sistema {label}.\n{detail}")
 
     def _cmd_cameras(self, chat_id: str, client: TelegramClient) -> None:
         rows = self._manager.list_cameras_summary()
@@ -268,10 +311,12 @@ class TelegramBotWorker(threading.Thread):
             client.send_message(chat_id, "Sin datos de la cámara.")
             return
         motion = "SÍ" if status.motion_detected else "NO"
+        security = self._security_label()
         client.send_message(
             chat_id,
             (
                 f"Estado — {name}\n"
+                f"{security}\n"
                 f"Movimiento: {motion}\n"
                 f"Personas: {status.person_count}\n"
                 f"Objetos: {status.total_objects}\n"

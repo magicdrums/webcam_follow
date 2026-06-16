@@ -177,10 +177,23 @@ class VisionDetector:
     def analyze(
         self, frame: np.ndarray
     ) -> tuple[list[DetectionEvent], np.ndarray, np.ndarray | None]:
-        events: list[DetectionEvent] = []
+        motion_detected, motion_area, motion_mask = self._detect_motion(frame)
         annotated = frame.copy()
 
-        motion_detected, motion_area, motion_mask = self._detect_motion(frame)
+        if not self.config.surveillance_armed:
+            events: list[DetectionEvent] = []
+            if motion_detected:
+                events.append(
+                    DetectionEvent(
+                        event_type=EventType.MOTION,
+                        message=f"Movimiento detectado (área: {motion_area}px)",
+                        object_counts={},
+                        motion_area=motion_area,
+                    )
+                )
+            return events, annotated, motion_mask
+
+        events: list[DetectionEvent] = []
 
         run_yolo = motion_detected or not self.config.yolo_on_motion_only
         if run_yolo:

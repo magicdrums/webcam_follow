@@ -261,6 +261,26 @@ class YoloSettings:
 
 
 @dataclass
+class SecurityState:
+    """Armado/desarmado global: YOLO, gestos y alertas."""
+
+    armed: bool = True
+    updated_at: str = field(default_factory=_now_iso)
+    updated_by: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SecurityState:
+        return cls(
+            armed=bool(data.get("armed", True)),
+            updated_at=data.get("updated_at", _now_iso()),
+            updated_by=str(data.get("updated_by", "")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class SnapshotSettings:
     retention_days: int = 30
     max_per_camera: int = 500

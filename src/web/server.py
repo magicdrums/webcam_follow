@@ -98,6 +98,20 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             abort(400, description="Cámara no válida")
         return jsonify({"ok": True, "camera_id": camera_id})
 
+    @app.get("/api/security")
+    def api_security():
+        return jsonify(manager.get_security_state())
+
+    @app.put("/api/security")
+    def api_set_security():
+        payload = request.get_json(silent=True) or {}
+        if "armed" not in payload:
+            abort(400, description="Campo armed obligatorio (true/false)")
+        source = str(payload.get("source", "web")).strip() or "web"
+        return jsonify(
+            manager.set_surveillance_armed(bool(payload["armed"]), source=source)
+        )
+
     @app.get("/api/status")
     def api_status():
         status = manager.get_status(_camera_id_from_request())

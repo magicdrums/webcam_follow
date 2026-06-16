@@ -79,6 +79,7 @@ class LiveStatus:
     motion_prediction: dict = field(default_factory=dict)
     heatmap_peak: float = 0.0
     heatmap_enabled: bool = True
+    surveillance_armed: bool = True
 
 
 @dataclass
@@ -272,6 +273,8 @@ class CameraWorker:
     def _process_motion_recording(
         self, frame, motion_detected: bool, yolo_settings, fps: float
     ) -> None:
+        if not self.store.get_security_state().armed:
+            return
         self._motion_recorder.process_frame(
             frame,
             motion_detected=motion_detected,
@@ -288,6 +291,8 @@ class CameraWorker:
         notifications: StoreNotificationService,
     ) -> None:
         if not events:
+            return
+        if not self.store.get_security_state().armed:
             return
 
         gesture_events = [
@@ -451,6 +456,7 @@ class CameraWorker:
             motion_prediction=(motion_snapshot or {}).get("prediction", {}),
             heatmap_peak=(motion_snapshot or {}).get("peak_intensity", 0.0),
             heatmap_enabled=self.camera.heatmap_enabled,
+            surveillance_armed=self.store.get_security_state().armed,
         )
         with self._lock:
             self._latest_jpeg = encoded.tobytes()
@@ -591,7 +597,9 @@ class CameraWorker:
                             last_motion_area = event.motion_area
                     if events:
                         last_counts = dict(events[-1].object_counts)
-                    last_yolo_active = (
+                    if not detection.surveillance_armed:
+                        last_counts = {}
+                    last_yolo_active = detection.surveillance_armed and (
                         not detection.yolo_on_motion_only or last_motion
                     )
 
@@ -871,3 +879,12 @@ class MonitorManager:
                 return True
             time.sleep(0.4)
         return False
+
+    def get_security_state(self) -> dict:
+        return self.store.get_security_state().to_dict()
+
+    def set_surveillance_armed(self, armed: bool, *, source: str = "web") -> dict:
+        state = self.store.set_security_state(armed=armed, source=source)
+        label = "armado" if armed else "desarmado"
+        logger.info("Sistema %s (origen: %s)", label, source)
+        return state.to_dict()

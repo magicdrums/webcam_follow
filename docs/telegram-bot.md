@@ -16,6 +16,9 @@ Solo responde al chat ID configurado (seguridad básica).
 
 | Comando | Descripción |
 |---------|-------------|
+| `/armar` | Activa YOLO, gestos y alertas |
+| `/desarmar` | Solo vista en vivo (sin alertas) |
+| `/seguridad` | Muestra si está armado o desarmado |
 | `/foto [cámara]` | Foto instantánea del frame en vivo |
 | `/video [seg] [cámara]` | Graba vídeo N segundos (default 10) |
 | `/movimiento [seg] [cámara]` | Espera movimiento y graba |

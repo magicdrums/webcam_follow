@@ -93,6 +93,9 @@
       </div>
     </div>
     <div class="header__actions">
+      <button type="button" id="btn-security" class="btn btn--security btn--armed" aria-pressed="true" title="Armado: detección y alertas activas">
+        Armado
+      </button>
       <select id="camera-select" class="select" aria-label="Seleccionar cámara"></select>
       <span id="conn-badge" class="badge badge--offline">Desconectado</span>
       <span id="fps-badge" class="badge">0 FPS</span>
@@ -126,6 +129,10 @@
           <div class="stat">
             <span class="stat__label">Objetos</span>
             <span id="stat-objects" class="stat__value">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Seguridad</span>
+            <span id="stat-security" class="stat__value stat__value--yes">Armado</span>
           </div>
           <div class="stat">
             <span class="stat__label">YOLO</span>

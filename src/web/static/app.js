@@ -1,6 +1,8 @@
 const $ = (id) => document.getElementById(id);
 
 let activeCameraId = null;
+let securityArmed = true;
+let securityToggleInFlight = false;
 let frameLoopActive = false;
 let frameTimer = null;
 let frameInFlight = false;
@@ -195,6 +197,60 @@ async function switchCamera(cameraId) {
   reloadVideoFeed();
 }
 
+function updateSecurityUi(armed) {
+  securityArmed = armed !== false;
+  const btn = $("btn-security");
+  const stat = $("stat-security");
+  if (btn) {
+    btn.textContent = securityArmed ? "Armado" : "Desarmado";
+    btn.classList.toggle("btn--armed", securityArmed);
+    btn.classList.toggle("btn--disarmed", !securityArmed);
+    btn.setAttribute("aria-pressed", securityArmed ? "true" : "false");
+    btn.title = securityArmed
+      ? "Armado: YOLO, gestos y alertas activos"
+      : "Desarmado: solo vista en vivo, sin alertas";
+  }
+  if (stat) {
+    stat.textContent = securityArmed ? "Armado" : "Desarmado";
+    stat.className =
+      "stat__value " + (securityArmed ? "stat__value--yes" : "stat__value--no");
+  }
+}
+
+async function loadSecurityState() {
+  try {
+    const res = await fetch("/api/security");
+    if (!res.ok) return;
+    const data = await res.json();
+    updateSecurityUi(data.armed);
+  } catch (err) {
+    console.warn("Security state error:", err);
+  }
+}
+
+async function toggleSecurity() {
+  if (securityToggleInFlight) return;
+  securityToggleInFlight = true;
+  const btn = $("btn-security");
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch("/api/security", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ armed: !securityArmed, source: "web" }),
+    });
+    if (!res.ok) throw new Error("No se pudo cambiar el estado");
+    const data = await res.json();
+    updateSecurityUi(data.armed);
+  } catch (err) {
+    console.warn("Toggle security error:", err);
+    alert("No se pudo cambiar armado/desarmado. Intenta de nuevo.");
+  } finally {
+    securityToggleInFlight = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
 function updateStatus(data) {
   const connected = data.connected;
   const badge = $("conn-badge");
@@ -212,7 +268,14 @@ function updateStatus(data) {
 
   $("stat-persons").textContent = data.person_count ?? 0;
   $("stat-objects").textContent = data.total_objects ?? 0;
-  $("stat-yolo").textContent = data.yolo_active ? "Activo" : "Reposo";
+  if (data.surveillance_armed !== undefined) {
+    updateSecurityUi(data.surveillance_armed);
+  }
+  if (data.surveillance_armed === false) {
+    $("stat-yolo").textContent = "Pausado";
+  } else {
+    $("stat-yolo").textContent = data.yolo_active ? "Activo" : "Reposo";
+  }
 
   $("meta-platform").textContent = data.platform_label || "—";
   $("meta-stream").textContent = data.stream_url || data.video_label || "—";
@@ -778,6 +841,11 @@ $("btn-reset-heatmap").addEventListener("click", async () => {
   }
 });
 
+$("btn-security").addEventListener("click", () => {
+  toggleSecurity();
+});
+
+loadSecurityState();
 loadCameras().then(() => {
   startLiveFeed();
   poll();
