@@ -21,6 +21,8 @@ services:
     volumes:
       - ./snapshots:/app/snapshots:Z
       - ./data:/app/data:Z
+    networks:
+      - webcam_follow
     restart: unless-stopped
     # Webcam USB local (descomenta en el host):
     # devices:
@@ -51,6 +53,8 @@ services:
     volumes:
       - ./snapshots:/app/snapshots:Z
       - ./data:/app/data:Z
+    networks:
+      - webcam_follow
     restart: unless-stopped
 
   # Perfil legacy: un solo contenedor (web + detección)
@@ -78,4 +82,11 @@ services:
     volumes:
       - ./snapshots:/app/snapshots:Z
       - ./data:/app/data:Z
+    networks:
+      - webcam_follow
     restart: unless-stopped
+
+networks:
+  webcam_follow:
+    name: webcam-follow
+    driver: bridge

@@ -125,24 +125,46 @@ class AdminStore:
 
     @staticmethod
     def _load_object(path: Path) -> dict:
-        if not path.exists():
+        try:
+            if not path.exists():
+                return {}
+            with path.open(encoding="utf-8") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+        except PermissionError:
+            logger.error(
+                "Sin permiso para leer %s. En el host: chown -R $(id -u):$(id -g) data snapshots "
+                "y en Fedora: chcon -Rt container_file_t data snapshots",
+                path,
+            )
             return {}
-        with path.open(encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data if isinstance(data, dict) else {}
 
     @staticmethod
     def _save_object(path: Path, data: dict) -> None:
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2, ensure_ascii=False)
+        try:
+            with path.open("w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2, ensure_ascii=False)
+        except PermissionError:
+            logger.error(
+                "Sin permiso para escribir %s. En el host: chown -R $(id -u):$(id -g) data snapshots",
+                path,
+            )
+            raise
 
     @staticmethod
     def _load_list(path: Path) -> list[dict]:
-        if not path.exists():
+        try:
+            if not path.exists():
+                return []
+            with path.open(encoding="utf-8") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, list) else []
+        except PermissionError:
+            logger.error(
+                "Sin permiso para leer %s. En el host: chown -R $(id -u):$(id -g) data snapshots",
+                path,
+            )
             return []
-        with path.open(encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data if isinstance(data, list) else []
 
     @staticmethod
     def _save_list(path: Path, items: list[dict]) -> None:

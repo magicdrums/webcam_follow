@@ -5,15 +5,16 @@ set -euo pipefail
 ensure_volume() {
   local dir="$1"
   mkdir -p "$dir"
-  if ! chown -R appuser:appuser "$dir" 2>/dev/null; then
-    if [ ! -w "$dir" ]; then
-      echo "ERROR: no se puede escribir en ${dir}" >&2
-      echo "En el host ejecuta:" >&2
-      echo "  chown -R \$(id -u):\$(id -g) data snapshots" >&2
-      echo "En Fedora con SELinux:" >&2
-      echo "  chcon -Rt container_file_t data snapshots" >&2
-      exit 1
-    fi
+  chown -R appuser:appuser "$dir" 2>/dev/null || true
+  chmod -R u+rwX,g+rwX "$dir" 2>/dev/null || true
+  if [ ! -w "$dir" ]; then
+    echo "ERROR: no se puede escribir en ${dir}" >&2
+    echo "En el host ejecuta:" >&2
+    echo "  chown -R \$(id -u):\$(id -g) data snapshots" >&2
+    echo "  chmod -R u+rwX data snapshots" >&2
+    echo "En Fedora con SELinux:" >&2
+    echo "  chcon -Rt container_file_t data snapshots" >&2
+    exit 1
   fi
 }
 

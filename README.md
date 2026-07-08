@@ -113,7 +113,7 @@ La forma recomendada para desplegar en **cualquier arquitectura** (PC x86_64, Ra
 | **worker** | `Containerfile` | Cámaras, YOLO, MediaPipe, Telegram, alertas, snapshots |
 | **web** | `Containerfile.web` | Panel `:8080`, administración `/admin` (imagen ligera, sin torch) |
 
-Así puedes **reconstruir solo la web** tras cambios de UI o API de administración, sin volver a descargar YOLO ni PyTorch. El worker expone una API interna en el puerto **8090** (`WORKER_URL`).
+Así puedes **reconstruir solo la web** tras cambios de UI o API de administración, sin volver a descargar YOLO ni PyTorch. El worker expone una API interna en el puerto **8090** (`WORKER_URL`); **web** y **worker** comparten la red bridge `webcam-follow` (DNS interno: el hostname `worker` resuelve solo dentro de esa red).
 
 Para el despliegue clásico en un solo contenedor, usa el perfil `monolith`:
 
@@ -175,14 +175,30 @@ Alternativa sin docker-compose: `podman-compose up -d --build` (paquete `podman-
 
 #### Si falla `Permission denied` en `/app/data`
 
-Suele ser propiedad del directorio en el host o SELinux (Fedora):
+Suele pasar al pasar de un contenedor monolito a **worker + web**: los JSON en `data/` quedan como `nobody` o con etiqueta SELinux distinta. **No hace falta reconstruir**; corrige permisos en el host y reinicia:
 
 ```bash
 chown -R $(id -u):$(id -g) data snapshots
-chmod u+rwX data snapshots
-# Solo si SELinux está en enforcing:
+chmod -R u+rwX data snapshots
+# Solo si SELinux está en enforcing (Fedora):
 chcon -Rt container_file_t data snapshots
-podman compose up -d --build
+podman compose restart worker web
+```
+
+Comprueba propiedad:
+
+```bash
+ls -la data/yolo_settings.json
+# Debe mostrar tu usuario (p. ej. vipereir), no nobody
+```
+
+#### Si falla `address already in use` en el puerto 8080
+
+Queda un contenedor antiguo (`webcam-follow` monolito) ocupando el puerto. Deténlo antes del compose nuevo:
+
+```bash
+podman stop webcam-follow 2>/dev/null; podman rm webcam-follow 2>/dev/null
+podman compose up -d
 ```
 
 ### Interfaz web
