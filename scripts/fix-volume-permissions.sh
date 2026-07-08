@@ -44,9 +44,8 @@ for dir in data snapshots; do
   rm -f "$probe"
 done
 echo "OK: data/ y snapshots/ escribibles por ${UID_NUM}:${GID_NUM}"
-echo "Añade a tu .env (UID/GID de tu usuario en el host):"
-echo "  HOST_UID=${UID_NUM}"
-echo "  HOST_GID=${GID_NUM}"
 echo ""
-echo "Listo. Reinicia el stack:"
-echo "  podman compose down && podman compose up -d"
+echo "Levanta el stack con:"
+echo "  ./scripts/compose.sh up -d"
+echo ""
+echo "Si .env tiene HOST_UID/HOST_GID, elimínalos (obsoletos; compose usa PUID/PGID de tu sesión)."

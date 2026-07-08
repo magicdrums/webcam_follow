@@ -34,7 +34,7 @@ COPY scripts/container-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh \
     && chown -R appuser:appuser /app
 
-USER appuser
+USER root
 
 VOLUME ["/app/snapshots", "/app/data"]
 

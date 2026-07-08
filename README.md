@@ -145,10 +145,10 @@ chmod +x scripts/compose.sh scripts/fix-volume-permissions.sh
 ./scripts/compose.sh up -d
 ```
 
-O exporta manualmente antes de `podman compose`:
+O exporta manualmente antes de `podman compose` (mejor usa `./scripts/compose.sh`):
 
 ```bash
-export HOST_UID=$(id -u) HOST_GID=$(id -g)
+export PUID=$(id -u) PGID=$(id -g)
 podman compose up -d
 ```
 
@@ -192,15 +192,15 @@ Alternativa sin docker-compose: `podman-compose up -d --build` (paquete `podman-
 Con **worker + web** en Fedora/Podman suele ser una combinación de:
 
 1. **SELinux y categoría privada** — si `ls -laZ` muestra `container_file_t:s0:c155,c652`, el archivo quedó etiquetado para **un solo** contenedor. Hay que resetear a `container_file_t:s0` y usar volúmenes **`:z`** (no `:Z`).
-2. **Archivos `root:root`** — el entrypoint del contenedor escribió como root en el volumen. Los contenedores deben arrancar con `user: HOST_UID:HOST_GID` (ver `scripts/compose.sh`).
-3. **`userns_mode: keep-id` no aplica** con el plugin `docker-compose`; `podman inspect` mostrará `UsernsMode: private`. Usa `HOST_UID`/`HOST_GID` en su lugar.
+2. **Podman rootless y `user: 1000:1000`** — aunque coincida con `id -u`, el subuid del contenedor **no** es tu usuario en bind mounts. No uses `user:` en compose; el entrypoint detecta rootless y evita `runuser appuser`.
+3. **`userns_mode: keep-id` no aplica** con el plugin `docker-compose`; confía en el entrypoint rootless.
 
 **No hace falta reconstruir imágenes**; corrige en el host y recrea contenedores:
 
 ```bash
 chmod +x scripts/fix-volume-permissions.sh scripts/compose.sh
 ./scripts/fix-volume-permissions.sh
-# Añade HOST_UID y HOST_GID a .env (el script imprime los valores)
+# Si .env tiene HOST_UID o HOST_GID, bórralos (obsoletos)
 ./scripts/compose.sh down
 ./scripts/compose.sh up -d
 ```
@@ -211,7 +211,7 @@ Comprueba:
 ls -laZ data/cameras.json
 # Propietario: tu usuario (no root). SELinux: container_file_t:s0 sin :cXXX,cYYY
 podman inspect webcam-follow-web --format '{{.Config.User}}'
-# Debe coincidir con id -u:id -g en el host
+# Rootless: suele ser "" o "0" (root interno mapeado a tu usuario en volúmenes)
 ```
 
 #### Si falla `address already in use` en el puerto 8080

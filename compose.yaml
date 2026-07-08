@@ -21,8 +21,9 @@ services:
     volumes:
       - ./snapshots:/app/snapshots:z
       - ./data:/app/data:z
-    # docker-compose con Podman ignora userns_mode: keep-id; usar UID/GID del host
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+      - ./scripts/container-entrypoint.sh:/usr/local/bin/entrypoint.sh:ro,z
+    # Rootless Podman: UID 0 interno = usuario del host en bind mounts (no usar 1000:1000)
+    user: "0:0"
     networks:
       - webcam_follow
     restart: unless-stopped
@@ -55,7 +56,9 @@ services:
     volumes:
       - ./snapshots:/app/snapshots:z
       - ./data:/app/data:z
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+      - ./scripts/container-entrypoint.sh:/usr/local/bin/entrypoint.sh:ro,z
+    # Rootless Podman: UID 0 interno = usuario del host en bind mounts (no usar 1000:1000)
+    user: "0:0"
     networks:
       - webcam_follow
     restart: unless-stopped
@@ -85,7 +88,9 @@ services:
     volumes:
       - ./snapshots:/app/snapshots:z
       - ./data:/app/data:z
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+      - ./scripts/container-entrypoint.sh:/usr/local/bin/entrypoint.sh:ro,z
+    # Rootless Podman: UID 0 interno = usuario del host en bind mounts (no usar 1000:1000)
+    user: "0:0"
     networks:
       - webcam_follow
     restart: unless-stopped
