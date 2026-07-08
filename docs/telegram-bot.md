@@ -29,7 +29,7 @@ Solo responde al chat ID configurado (seguridad básica).
 
 También funcionan sin `/`: `foto`, `video 15`, `movimiento`.
 
-**Cámara** opcional: nombre (exacto o parcial) o inicio del ID. Sin argumento usa la cámara **activa y online**; si la activa está desconectada, elige la primera cámara conectada. Solo aparecen cámaras **activas** (habilitadas en Admin).
+**Cámara** opcional: nombre completo (puede llevar espacios), coincidencia parcial si es única, o inicio del ID. Sin argumento usa la cámara **activa y online**.
 
 ## Ejemplos
 

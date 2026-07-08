@@ -30,10 +30,31 @@ HELP_TEXT = """Comandos de Webcam Follow:
 
 Ejemplos:
   /desarmar
-  /foto
+  /foto Habitacion Victor
   /video 15 Entrada
-  /movimiento 20
+  /movimiento 20 Habitacion Victor
 """
+
+
+def _camera_token_from_args(args: list[str]) -> str | None:
+    if not args:
+        return None
+    token = " ".join(args).strip()
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in {'"', "'"}:
+        token = token[1:-1].strip()
+    return token or None
+
+
+def _parse_duration_and_camera(
+    args: list[str], default_duration: float
+) -> tuple[float, str | None]:
+    if not args:
+        return default_duration, None
+    if re.fullmatch(r"\d+(?:\.\d+)?", args[0]):
+        duration = float(args[0])
+        camera = _camera_token_from_args(args[1:])
+        return duration, camera
+    return default_duration, _camera_token_from_args(args)
 
 
 class TelegramBotWorker(threading.Thread):
@@ -164,34 +185,24 @@ class TelegramBotWorker(threading.Thread):
             return
 
         if command == "/estado":
-            self._cmd_status(chat_id, client, args)
+            self._cmd_status(chat_id, client, _camera_token_from_args(args))
             return
 
         if command == "/foto":
-            self._cmd_photo(chat_id, client, args)
+            self._cmd_photo(chat_id, client, _camera_token_from_args(args))
             return
 
         if command == "/video":
-            duration = channels.telegram_bot_video_sec
-            cam_token = None
-            if args:
-                if re.fullmatch(r"\d+(?:\.\d+)?", args[0]):
-                    duration = float(args[0])
-                    cam_token = args[1] if len(args) > 1 else None
-                else:
-                    cam_token = args[0]
+            duration, cam_token = _parse_duration_and_camera(
+                args, channels.telegram_bot_video_sec
+            )
             self._cmd_video(chat_id, client, cam_token, duration)
             return
 
         if command == "/movimiento":
-            duration = channels.telegram_bot_video_sec
-            cam_token = None
-            if args:
-                if re.fullmatch(r"\d+(?:\.\d+)?", args[0]):
-                    duration = float(args[0])
-                    cam_token = args[1] if len(args) > 1 else None
-                else:
-                    cam_token = args[0]
+            duration, cam_token = _parse_duration_and_camera(
+                args, channels.telegram_bot_video_sec
+            )
             self._cmd_motion_record(
                 chat_id,
                 client,
@@ -202,7 +213,7 @@ class TelegramBotWorker(threading.Thread):
             return
 
         if command == "/ultimo":
-            self._cmd_latest(chat_id, client, args[0] if args else None)
+            self._cmd_latest(chat_id, client, _camera_token_from_args(args))
             return
 
         client.send_message(
@@ -301,8 +312,10 @@ class TelegramBotWorker(threading.Thread):
             "Cámaras:\n" + ("\n".join(lines) if lines else "No hay cámaras configuradas."),
         )
 
-    def _cmd_status(self, chat_id: str, client: TelegramClient, args: list[str]) -> None:
-        camera_id, name = self._resolve_camera(args[0] if args else None)
+    def _cmd_status(
+        self, chat_id: str, client: TelegramClient, cam_token: str | None
+    ) -> None:
+        camera_id, name = self._resolve_camera(cam_token)
         if not camera_id:
             client.send_message(chat_id, "Cámara no encontrada.")
             return
@@ -326,11 +339,14 @@ class TelegramBotWorker(threading.Thread):
         )
 
     def _cmd_photo(
-        self, chat_id: str, client: TelegramClient, args: list[str]
+        self, chat_id: str, client: TelegramClient, cam_token: str | None
     ) -> None:
-        camera_id, name = self._resolve_camera(args[0] if args else None)
+        camera_id, name = self._resolve_camera(cam_token)
         if not camera_id:
-            client.send_message(chat_id, "Cámara no encontrada.")
+            client.send_message(
+                chat_id,
+                "Cámara no encontrada. Usa /camaras para ver nombres exactos.",
+            )
             return
         client.send_message(chat_id, f"Capturando foto de {name}…")
         path = self._manager.capture_photo(camera_id)
