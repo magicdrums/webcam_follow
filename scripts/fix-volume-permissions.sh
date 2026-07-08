@@ -17,8 +17,11 @@ chown_tree() {
 }
 
 echo "Ajustando propietario a ${UID_NUM}:${GID_NUM}..."
+mkdir -p data snapshots
 chown_tree
 chmod -R u+rwX data snapshots
+# Asegura que el directorio en sí es transitable/escribible
+chmod u+rwX data snapshots
 
 if command -v chcon >/dev/null 2>&1 && [ "$(getenforce 2>/dev/null || echo Disabled)" = "Enforcing" ]; then
   echo "SELinux: etiqueta compartida container_file_t:s0 (sin categoría privada cXXX)..."
@@ -30,6 +33,17 @@ if command -v chcon >/dev/null 2>&1 && [ "$(getenforce 2>/dev/null || echo Disab
 fi
 
 echo ""
+echo "Prueba de escritura en el host..."
+for dir in data snapshots; do
+  probe="${dir}/.perm_test_$$"
+  if ! touch "$probe" 2>/dev/null; then
+    echo "ERROR: aún no se puede escribir en ${dir}/" >&2
+    ls -ldZ "$dir" 2>/dev/null || ls -ld "$dir" >&2
+    exit 1
+  fi
+  rm -f "$probe"
+done
+echo "OK: data/ y snapshots/ escribibles por ${UID_NUM}:${GID_NUM}"
 echo "Añade a tu .env (UID/GID de tu usuario en el host):"
 echo "  HOST_UID=${UID_NUM}"
 echo "  HOST_GID=${GID_NUM}"
