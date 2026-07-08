@@ -138,6 +138,20 @@ podman compose up -d --build
 podman compose logs -f
 ```
 
+En Fedora con **docker-compose** + Podman, usa el wrapper para pasar tu UID/GID al contenedor (evita archivos `root:root` y errores SELinux):
+
+```bash
+chmod +x scripts/compose.sh scripts/fix-volume-permissions.sh
+./scripts/compose.sh up -d
+```
+
+O exporta manualmente antes de `podman compose`:
+
+```bash
+export HOST_UID=$(id -u) HOST_GID=$(id -g)
+podman compose up -d
+```
+
 Reconstruir solo un servicio:
 
 ```bash
@@ -177,32 +191,27 @@ Alternativa sin docker-compose: `podman-compose up -d --build` (paquete `podman-
 
 Con **worker + web** en Fedora/Podman suele ser una combinación de:
 
-1. **SELinux y `:Z` en volúmenes** — `:Z` marca los archivos como *privados* de un solo contenedor. Si `web` y `worker` montan `./data:Z`, uno puede bloquear al otro. En `compose.yaml` se usa **`:z`** (compartido entre contenedores del stack).
-2. **Propietario `nobody`** — tras contenedores antiguos, los JSON quedan con UID 65534.
+1. **SELinux y categoría privada** — si `ls -laZ` muestra `container_file_t:s0:c155,c652`, el archivo quedó etiquetado para **un solo** contenedor. Hay que resetear a `container_file_t:s0` y usar volúmenes **`:z`** (no `:Z`).
+2. **Archivos `root:root`** — el entrypoint del contenedor escribió como root en el volumen. Los contenedores deben arrancar con `user: HOST_UID:HOST_GID` (ver `scripts/compose.sh`).
+3. **`userns_mode: keep-id` no aplica** con el plugin `docker-compose`; `podman inspect` mostrará `UsernsMode: private`. Usa `HOST_UID`/`HOST_GID` en su lugar.
 
 **No hace falta reconstruir imágenes**; corrige en el host y recrea contenedores:
 
 ```bash
-chmod +x scripts/fix-volume-permissions.sh
+chmod +x scripts/fix-volume-permissions.sh scripts/compose.sh
 ./scripts/fix-volume-permissions.sh
-podman compose down
-podman compose up -d
-```
-
-O manualmente:
-
-```bash
-chown -R $(id -u):$(id -g) data snapshots
-chmod -R u+rwX data snapshots
-chcon -Rt container_file_t data snapshots   # solo si SELinux enforcing
-podman compose down && podman compose up -d
+# Añade HOST_UID y HOST_GID a .env (el script imprime los valores)
+./scripts/compose.sh down
+./scripts/compose.sh up -d
 ```
 
 Comprueba:
 
 ```bash
-ls -la data/cameras.json
-# Debe mostrar tu usuario, no nobody
+ls -laZ data/cameras.json
+# Propietario: tu usuario (no root). SELinux: container_file_t:s0 sin :cXXX,cYYY
+podman inspect webcam-follow-web --format '{{.Config.User}}'
+# Debe coincidir con id -u:id -g en el host
 ```
 
 #### Si falla `address already in use` en el puerto 8080
