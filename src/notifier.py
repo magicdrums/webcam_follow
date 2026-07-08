@@ -9,11 +9,10 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
-import cv2
 import requests
 
 from src.config import AppConfig, EmailConfig, TelegramConfig, WebhookConfig, WhatsAppConfig
-from src.detector import DetectionEvent
+from src.events import DetectionEvent
 
 logger = logging.getLogger(__name__)
 
@@ -302,6 +301,8 @@ class NotificationService:
 
 
 def save_snapshot(frame, directory: Path, event: DetectionEvent) -> Path:
+    import cv2
+
     directory.mkdir(parents=True, exist_ok=True)
     filename = (
         f"{event.timestamp.strftime('%Y%m%d_%H%M%S')}_{event.event_type.value}.jpg"

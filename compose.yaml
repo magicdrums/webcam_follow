@@ -1,5 +1,61 @@
 services:
-  webcam-follow:
+  worker:
+    image: localhost/webcam-follow-worker:latest
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: webcam-follow-worker
+    env_file:
+      - .env
+    environment:
+      CONTAINER: "1"
+      SERVICE_MODE: worker
+      SHOW_PREVIEW: "false"
+      YOLO_DEVICE: cpu
+      WORKER_HOST: "0.0.0.0"
+      WORKER_PORT: "8090"
+      SNAPSHOT_DIR: /app/snapshots
+      DATA_DIR: /app/data
+    expose:
+      - "8090"
+    volumes:
+      - ./snapshots:/app/snapshots:Z
+      - ./data:/app/data:Z
+    restart: unless-stopped
+    # Webcam USB local (descomenta en el host):
+    # devices:
+    #   - /dev/video0:/dev/video0
+
+  web:
+    image: localhost/webcam-follow-web:latest
+    build:
+      context: .
+      dockerfile: Containerfile.web
+    container_name: webcam-follow-web
+    depends_on:
+      - worker
+    env_file:
+      - .env
+    environment:
+      CONTAINER: "1"
+      SERVICE_MODE: web
+      WEB_ENABLED: "true"
+      WEB_HOST: "0.0.0.0"
+      WEB_PORT: "8080"
+      WORKER_URL: http://worker:8090
+      WORKER_TOKEN: ${WORKER_TOKEN:-}
+      SNAPSHOT_DIR: /app/snapshots
+      DATA_DIR: /app/data
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./snapshots:/app/snapshots:Z
+      - ./data:/app/data:Z
+    restart: unless-stopped
+
+  # Perfil legacy: un solo contenedor (web + detección)
+  monolith:
+    profiles: [monolith]
     image: localhost/webcam-follow:latest
     build:
       context: .
@@ -9,6 +65,7 @@ services:
       - .env
     environment:
       CONTAINER: "1"
+      SERVICE_MODE: monolith
       SHOW_PREVIEW: "false"
       WEB_ENABLED: "true"
       WEB_HOST: "0.0.0.0"
@@ -19,12 +76,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # :Z relabel SELinux en Fedora para permitir escritura desde el contenedor
       - ./snapshots:/app/snapshots:Z
       - ./data:/app/data:Z
     restart: unless-stopped
-    # RTSP en LAN: la red bridge suele bastar. Usa host si hay problemas de multicast/UDP.
-    # network_mode: host
-    # Webcam USB local (descomenta en el host):
-    # devices:
-    #   - /dev/video0:/dev/video0

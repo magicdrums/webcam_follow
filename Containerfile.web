@@ -1,0 +1,44 @@
+# Imagen ligera: panel web y administración (sin YOLO/OpenCV/torch)
+FROM docker.io/library/python:3.12-slim-bookworm
+
+LABEL org.opencontainers.image.title="webcam-follow-web" \
+      org.opencontainers.image.description="Interfaz web y admin de Webcam Follow"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    CONTAINER=1 \
+    SERVICE_MODE=web \
+    WEB_ENABLED=true \
+    WEB_HOST=0.0.0.0 \
+    WEB_PORT=8080 \
+    WORKER_URL=http://worker:8090 \
+    SNAPSHOT_DIR=/app/snapshots \
+    DATA_DIR=/app/data
+
+WORKDIR /app
+
+RUN useradd --create-home --uid 1000 --shell /bin/bash appuser \
+    && mkdir -p /app/snapshots /app/data \
+    && chown -R appuser:appuser /app
+
+COPY requirements-web.txt ./
+
+RUN pip install --upgrade pip wheel \
+    && pip install -r requirements-web.txt
+
+COPY main.py ./
+COPY src/ ./src/
+COPY scripts/container-entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+VOLUME ["/app/snapshots", "/app/data"]
+
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["python", "main.py"]

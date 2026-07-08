@@ -106,7 +106,20 @@ Luego en Webcam Follow: **Admin → Cámaras → Stream RTSP/HTTP** → `rtsp://
 
 ## Despliegue con Podman (x86 y ARM)
 
-La forma recomendada para desplegar en **cualquier arquitectura** (PC x86_64, Raspberry Pi arm64, servidores ARM) es el contenedor. Incluye Python, ffmpeg, OpenCV headless y YOLOv8n pre-descargado.
+La forma recomendada para desplegar en **cualquier arquitectura** (PC x86_64, Raspberry Pi arm64, servidores ARM) es el contenedor. Por defecto el stack se divide en **dos servicios**:
+
+| Servicio | Imagen | Rol |
+|----------|--------|-----|
+| **worker** | `Containerfile` | Cámaras, YOLO, MediaPipe, Telegram, alertas, snapshots |
+| **web** | `Containerfile.web` | Panel `:8080`, administración `/admin` (imagen ligera, sin torch) |
+
+Así puedes **reconstruir solo la web** tras cambios de UI o API de administración, sin volver a descargar YOLO ni PyTorch. El worker expone una API interna en el puerto **8090** (`WORKER_URL`).
+
+Para el despliegue clásico en un solo contenedor, usa el perfil `monolith`:
+
+```bash
+podman compose --profile monolith up -d --build
+```
 
 ### Arranque rápido
 
@@ -124,6 +137,19 @@ export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 podman compose up -d --build
 podman compose logs -f
 ```
+
+Reconstruir solo un servicio:
+
+```bash
+podman compose up -d --build web      # panel y admin
+podman compose up -d --build worker     # detección y notificaciones
+```
+
+Variables útiles (ver `.env.example`):
+
+- `SERVICE_MODE`: `monolith` | `web` | `worker`
+- `WORKER_URL`: URL del worker desde el contenedor web (p. ej. `http://worker:8090`)
+- `WORKER_TOKEN`: token opcional compartido (`X-Worker-Token`) entre web y worker
 
 Abre **http://localhost:8080** para ver el panel web.  
 **Administración:** http://localhost:8080/admin

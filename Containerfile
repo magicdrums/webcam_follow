@@ -58,7 +58,7 @@ USER root
 
 VOLUME ["/app/snapshots", "/app/data"]
 
-EXPOSE 8080
+EXPOSE 8080 8090
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python", "main.py"]

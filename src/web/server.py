@@ -8,6 +8,8 @@ from pathlib import Path
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file
 
 from src.admin.channels import channels_to_public_dict, merge_channel_updates
+from src.admin.models import AlertRule, Camera, SnapshotSettings
+from src.admin.store import AdminStore
 from src.admin.tuya_config import merge_tuya_updates, tuya_to_public_dict
 from src.admin.yolo_config import (
     COCO_CLASSES,
@@ -16,16 +18,13 @@ from src.admin.yolo_config import (
     yolo_settings_to_public_dict,
 )
 from src.integrations.tuya.client import TuyaClientError
-from src.admin.models import AlertRule, Camera, SnapshotSettings
-from src.admin.notifications import StoreNotificationService
-from src.admin.store import AdminStore
 from src.config import AppConfig
-from src.monitor_manager import MonitorManager
+from src.runtime_backend import MonitorBackend
 
 logger = logging.getLogger(__name__)
 
 
-def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) -> Flask:
+def create_app(backend: MonitorBackend, config: AppConfig, store: AdminStore) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).parent / "templates"),
@@ -42,7 +41,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         return render_template("admin.html")
 
     def _camera_id_from_request() -> str | None:
-        return request.args.get("camera_id") or manager.get_active_camera_id()
+        return request.args.get("camera_id") or backend.get_active_camera_id()
 
     @app.get("/video_feed")
     def video_feed():
@@ -51,7 +50,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
 
         def generate():
             while True:
-                frame = manager.get_jpeg_frame(camera_id)
+                frame = backend.get_jpeg_frame(camera_id)
                 if frame:
                     yield (
                         b"--frame\r\n"
@@ -69,8 +68,8 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
     def api_frame():
         """Frame JPEG único — compatible con Safari iOS y navegadores móviles."""
         camera_id = _camera_id_from_request()
-        status = manager.get_status(camera_id)
-        frame = manager.get_jpeg_frame(camera_id)
+        status = backend.get_status(camera_id)
+        frame = backend.get_jpeg_frame(camera_id)
         if not frame:
             abort(404, description="Sin frame disponible")
         headers = {
@@ -88,19 +87,19 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
 
     @app.get("/api/cameras")
     def api_cameras():
-        return jsonify(manager.list_cameras_summary())
+        return jsonify(backend.list_cameras_summary())
 
     @app.post("/api/cameras/active")
     def api_set_active_camera():
         payload = request.get_json(silent=True) or {}
         camera_id = payload.get("camera_id")
-        if not camera_id or not manager.set_active_camera(camera_id):
+        if not camera_id or not backend.set_active_camera(camera_id):
             abort(400, description="Cámara no válida")
         return jsonify({"ok": True, "camera_id": camera_id})
 
     @app.get("/api/security")
     def api_security():
-        return jsonify(manager.get_security_state())
+        return jsonify(backend.get_security_state())
 
     @app.put("/api/security")
     def api_set_security():
@@ -109,12 +108,12 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             abort(400, description="Campo armed obligatorio (true/false)")
         source = str(payload.get("source", "web")).strip() or "web"
         return jsonify(
-            manager.set_surveillance_armed(bool(payload["armed"]), source=source)
+            backend.set_surveillance_armed(bool(payload["armed"]), source=source)
         )
 
     @app.get("/api/status")
     def api_status():
-        status = manager.get_status(_camera_id_from_request())
+        status = backend.get_status(_camera_id_from_request())
         if not status:
             return jsonify({"connected": False})
         return jsonify(asdict(status))
@@ -122,7 +121,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
     @app.get("/api/motion/heatmap")
     def api_heatmap_image():
         camera_id = _camera_id_from_request()
-        jpeg = manager.get_heatmap_jpeg(camera_id)
+        jpeg = backend.get_heatmap_jpeg(camera_id)
         if not jpeg:
             abort(404, description="Sin datos de mapa de calor")
         return Response(jpeg, mimetype="image/jpeg")
@@ -130,24 +129,24 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
     @app.post("/api/motion/heatmap/reset")
     def api_heatmap_reset():
         camera_id = _camera_id_from_request()
-        if not manager.reset_motion_analytics(camera_id):
+        if not backend.reset_motion_analytics(camera_id):
             abort(404, description="Cámara no encontrada")
         return jsonify({"ok": True})
 
     @app.get("/api/alerts")
     def api_alerts():
         camera_id = request.args.get("camera_id")
-        alerts = manager.get_alerts(config.web.alerts_limit, camera_id)
+        alerts = backend.get_alerts(config.web.alerts_limit, camera_id)
         return jsonify([asdict(alert) for alert in alerts])
 
     @app.get("/api/snapshots")
     def api_snapshots():
-        camera_id = request.args.get("camera_id") or manager.get_active_camera_id()
+        camera_id = request.args.get("camera_id") or backend.get_active_camera_id()
         date = request.args.get("date")
         limit = config.web.snapshots_limit
         if date:
             limit = max(limit, 200)
-        result = manager.snapshot_service.list_snapshots(
+        result = backend.snapshot_service.list_snapshots(
             store.list_cameras(enabled_only=True),
             camera_id=camera_id,
             date=date,
@@ -157,13 +156,13 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
 
     @app.get("/api/snapshots/dates")
     def api_snapshot_dates():
-        camera_id = request.args.get("camera_id") or manager.get_active_camera_id()
+        camera_id = request.args.get("camera_id") or backend.get_active_camera_id()
         month = request.args.get("month")
         if not month:
             abort(400, description="Parámetro month obligatorio (YYYY-MM)")
         try:
             return jsonify(
-                manager.snapshot_service.list_media_dates(
+                backend.snapshot_service.list_media_dates(
                     store.list_cameras(enabled_only=True),
                     camera_id=camera_id,
                     month=month,
@@ -216,7 +215,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             heatmap_enabled=bool(payload.get("heatmap_enabled", True)),
         )
         store.add_camera(camera)
-        manager.reload()
+        backend.reload()
         return jsonify(camera.to_dict()), 201
 
     # --- Admin API: YOLO / detección ---
@@ -259,7 +258,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         return jsonify(yolo_settings_to_public_dict(updated))
 
     # --- Admin API: capturas ---
-    snapshot_service = manager.snapshot_service
+    snapshot_service = backend.snapshot_service
 
     @app.get("/api/admin/snapshots/config")
     def admin_get_snapshot_config():
@@ -305,7 +304,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
 
     @app.post("/api/admin/snapshots/cleanup")
     def admin_snapshot_cleanup():
-        deleted = manager.run_snapshot_cleanup()
+        deleted = backend.run_snapshot_cleanup()
         return jsonify({"ok": True, "deleted": deleted})
 
     @app.delete("/api/admin/snapshots/<camera_id>/<filename>")
@@ -335,7 +334,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         camera = store.update_camera(camera_id, updates)
         if not camera:
             abort(404)
-        manager.reload()
+        backend.reload()
         return jsonify(camera.to_dict())
 
     @app.delete("/api/admin/cameras/<camera_id>")
@@ -343,7 +342,7 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         if not store.delete_camera(camera_id):
             abort(404)
         snapshot_service.delete_camera(camera_id)
-        manager.reload()
+        backend.reload()
         return jsonify({"ok": True})
 
     # --- Admin API: reglas de alerta ---
@@ -441,6 +440,8 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
         if channel not in {"email", "telegram", "whatsapp", "webhook"}:
             abort(400, description="Canal inválido")
         try:
+            from src.admin.notifications import StoreNotificationService
+
             StoreNotificationService(store).test_channel(channel)
         except ValueError as exc:
             abort(400, description=str(exc))
@@ -512,14 +513,14 @@ def create_app(manager: MonitorManager, config: AppConfig, store: AdminStore) ->
             ),
         )
         store.add_camera(camera)
-        manager.reload()
+        backend.reload()
         return jsonify(camera.to_dict()), 201
 
     return app
 
 
-def run_server(manager: MonitorManager, config: AppConfig, store: AdminStore) -> None:
-    app = create_app(manager, config, store)
+def run_server(backend: MonitorBackend, config: AppConfig, store: AdminStore) -> None:
+    app = create_app(backend, config, store)
     logger.info(
         "Interfaz web en http://%s:%d  |  Admin: /admin",
         config.web.host,

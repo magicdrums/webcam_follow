@@ -6,8 +6,7 @@ import sys
 from src.admin.store import AdminStore
 from src.config import load_config
 from src.monitor_manager import MonitorManager
-from src.runtime_backend import create_backend
-from src.web.server import run_server
+from src.worker.server import run_worker_server
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +16,8 @@ def main() -> int:
     store = AdminStore(config.data_dir)
     manager = MonitorManager(config, store)
     manager.start()
-    backend = create_backend(config, manager)
     try:
-        run_server(backend, config, store)
+        run_worker_server(manager, config, store)
     except KeyboardInterrupt:
         logger.info("Detenido por el usuario")
     finally:

@@ -11,7 +11,7 @@ from src.admin.channels import (
     channels_to_whatsapp_config,
 )
 from src.admin.store import AdminStore
-from src.detector import DetectionEvent, EventType
+from src.events import DetectionEvent, EventType
 from src.notifier import EmailNotifier, TelegramNotifier, WebhookNotifier, WhatsAppNotifier
 
 logger = logging.getLogger(__name__)
