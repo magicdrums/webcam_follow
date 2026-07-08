@@ -48,7 +48,7 @@ class AdminStore:
 
     def bootstrap_from_env(self, config: AppConfig) -> None:
         with self._lock:
-            if not self._cameras_file.exists() or not self._load_list(self._cameras_file):
+            if not self._path_exists(self._cameras_file) or not self._load_list(self._cameras_file):
                 camera = Camera.create(
                     name="Cámara principal",
                     enabled=True,
@@ -60,7 +60,7 @@ class AdminStore:
                 self._save_list(self._cameras_file, [camera.to_dict()])
                 logger.info("Cámara inicial creada desde .env (%s)", camera.id)
 
-            if not self._rules_file.exists() or not self._load_list(self._rules_file):
+            if not self._path_exists(self._rules_file) or not self._load_list(self._rules_file):
                 rule = AlertRule.create(
                     name="Alerta general",
                     enabled=True,
@@ -72,30 +72,30 @@ class AdminStore:
                 self._save_list(self._rules_file, [rule.to_dict()])
                 logger.info("Regla de alerta inicial creada (%s)", rule.id)
 
-            if not self._history_file.exists():
+            if not self._path_exists(self._history_file):
                 self._save_list(self._history_file, [])
 
-            if not self._channels_file.exists():
+            if not self._path_exists(self._channels_file):
                 channels = channels_from_app_config(config)
                 self._save_object(self._channels_file, channels.to_dict())
                 logger.info("Canales de notificación inicializados desde .env")
 
-            if not self._tuya_file.exists():
+            if not self._path_exists(self._tuya_file):
                 tuya = _tuya_from_app_config(config)
                 self._save_object(self._tuya_file, tuya.to_dict())
                 logger.info("Configuración Tuya inicializada")
 
-            if not self._snapshots_file.exists():
+            if not self._path_exists(self._snapshots_file):
                 snap = _snapshot_settings_from_app_config(config)
                 self._save_object(self._snapshots_file, snap.to_dict())
                 logger.info("Configuración de capturas inicializada")
 
-            if not self._yolo_file.exists():
+            if not self._path_exists(self._yolo_file):
                 yolo = _yolo_settings_from_app_config(config)
                 self._save_object(self._yolo_file, yolo.to_dict())
                 logger.info("Configuración YOLO inicializada desde .env")
 
-            if not self._security_file.exists():
+            if not self._path_exists(self._security_file):
                 self._save_object(
                     self._security_file, SecurityState(armed=True).to_dict()
                 )
@@ -124,9 +124,24 @@ class AdminStore:
         self._tuya_client = None
 
     @staticmethod
+    def _path_exists(path: Path) -> bool:
+        try:
+            return path.exists()
+        except OSError as exc:
+            logger.error(
+                "Sin permiso para acceder a %s (%s). En el host: "
+                "chown -R $(id -u):$(id -g) data snapshots && "
+                "chcon -Rt container_file_t data snapshots. "
+                "Con varios contenedores usa volúmenes :z (no :Z) en compose.",
+                path,
+                exc,
+            )
+            return False
+
+    @staticmethod
     def _load_object(path: Path) -> dict:
         try:
-            if not path.exists():
+            if not AdminStore._path_exists(path):
                 return {}
             with path.open(encoding="utf-8") as handle:
                 data = json.load(handle)
@@ -154,7 +169,7 @@ class AdminStore:
     @staticmethod
     def _load_list(path: Path) -> list[dict]:
         try:
-            if not path.exists():
+            if not AdminStore._path_exists(path):
                 return []
             with path.open(encoding="utf-8") as handle:
                 data = json.load(handle)

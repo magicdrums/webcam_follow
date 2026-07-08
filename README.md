@@ -175,21 +175,34 @@ Alternativa sin docker-compose: `podman-compose up -d --build` (paquete `podman-
 
 #### Si falla `Permission denied` en `/app/data`
 
-Suele pasar al pasar de un contenedor monolito a **worker + web**: los JSON en `data/` quedan como `nobody` o con etiqueta SELinux distinta. **No hace falta reconstruir**; corrige permisos en el host y reinicia:
+Con **worker + web** en Fedora/Podman suele ser una combinación de:
+
+1. **SELinux y `:Z` en volúmenes** — `:Z` marca los archivos como *privados* de un solo contenedor. Si `web` y `worker` montan `./data:Z`, uno puede bloquear al otro. En `compose.yaml` se usa **`:z`** (compartido entre contenedores del stack).
+2. **Propietario `nobody`** — tras contenedores antiguos, los JSON quedan con UID 65534.
+
+**No hace falta reconstruir imágenes**; corrige en el host y recrea contenedores:
+
+```bash
+chmod +x scripts/fix-volume-permissions.sh
+./scripts/fix-volume-permissions.sh
+podman compose down
+podman compose up -d
+```
+
+O manualmente:
 
 ```bash
 chown -R $(id -u):$(id -g) data snapshots
 chmod -R u+rwX data snapshots
-# Solo si SELinux está en enforcing (Fedora):
-chcon -Rt container_file_t data snapshots
-podman compose restart worker web
+chcon -Rt container_file_t data snapshots   # solo si SELinux enforcing
+podman compose down && podman compose up -d
 ```
 
-Comprueba propiedad:
+Comprueba:
 
 ```bash
-ls -la data/yolo_settings.json
-# Debe mostrar tu usuario (p. ej. vipereir), no nobody
+ls -la data/cameras.json
+# Debe mostrar tu usuario, no nobody
 ```
 
 #### Si falla `address already in use` en el puerto 8080

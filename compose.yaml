@@ -19,8 +19,9 @@ services:
     expose:
       - "8090"
     volumes:
-      - ./snapshots:/app/snapshots:Z
-      - ./data:/app/data:Z
+      - ./snapshots:/app/snapshots:z
+      - ./data:/app/data:z
+    userns_mode: keep-id
     networks:
       - webcam_follow
     restart: unless-stopped
@@ -51,8 +52,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./snapshots:/app/snapshots:Z
-      - ./data:/app/data:Z
+      - ./snapshots:/app/snapshots:z
+      - ./data:/app/data:z
+    userns_mode: keep-id
     networks:
       - webcam_follow
     restart: unless-stopped
@@ -80,8 +82,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./snapshots:/app/snapshots:Z
-      - ./data:/app/data:Z
+      - ./snapshots:/app/snapshots:z
+      - ./data:/app/data:z
+    userns_mode: keep-id
     networks:
       - webcam_follow
     restart: unless-stopped
